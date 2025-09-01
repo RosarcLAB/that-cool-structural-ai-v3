@@ -1,0 +1,174 @@
+// components/Canvas.tsx: Renders the side panel for pinned items.
+
+import React, { useState } from 'react';
+import { CanvasItem, CanvasTextItem } from '../customTypes/types';
+import { BeamInput } from '../customTypes/structuralElement';
+import { CloseIcon } from './utility/icons';
+import { BeamInputForm } from '././structuralEngineering/BeamInputForm';
+import { BeamAnalysisDisplay } from '././structuralEngineering/BeamAnalysisDisplay';
+import { Spinner } from './utility/Spinner';
+
+interface CanvasProps {
+    items: CanvasItem[];
+    selectedItemId: string | null;
+    onSelectItem: (id: string | null) => void;
+    onCloseItem: (id: string) => void;
+    onUpdateItem: (item: CanvasItem) => void;
+    onAnalyzeInCanvas: (beamInput: BeamInput) => Promise<void>;
+}
+
+// A wrapper for the currently displayed item in the canvas, providing a title bar.
+const SelectedItemWrapper: React.FC<{ title: string; children: React.ReactNode; }> = ({ title, children }) => (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col">
+        <div className="flex justify-between items-center p-3 border-b bg-gray-50">
+            <h3 className="font-semibold text-gray-700 truncate pr-2">{title}</h3>
+        </div>
+        <div className="p-4 bg-white rounded-b-lg relative">
+            {children}
+        </div>
+    </div>
+);
+
+// Specific component for editable text items
+const TextCanvasItem: React.FC<{ item: CanvasTextItem; onUpdate: (item: CanvasTextItem) => void }> = ({ item, onUpdate }) => {
+    const [content, setContent] = useState(item.content);
+
+    const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        setContent(e.target.value);
+    };
+
+    const handleBlur = () => {
+        onUpdate({ ...item, content });
+    };
+
+    return (
+        <textarea
+            value={content}
+            onChange={handleContentChange}
+            onBlur={handleBlur}
+            className="w-full h-48 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:outline-none"
+            aria-label="Text note editor"
+        />
+    );
+};
+
+
+export const Canvas: React.FC<CanvasProps> = ({ 
+    items, 
+    selectedItemId,
+    onSelectItem,
+    onCloseItem, 
+    onUpdateItem, 
+    onAnalyzeInCanvas 
+}) => {
+    const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+
+    const handleFormSubmit = async (data: BeamInput, itemId: string) => {
+        setAnalyzingId(itemId);
+        await onAnalyzeInCanvas(data);
+        setAnalyzingId(null);
+    };
+    
+    // Helper to get a short title for the chip.
+    const getChipTitle = (item: CanvasItem) => {
+        switch (item.type) {
+            case 'text':
+                return item.title || 'Note';
+            case 'beam_input':
+                return item.data.Name;
+            case 'beam_output':
+                return item.inputData.Name;
+            default:
+                return 'Item';
+        }
+    };
+    
+    const selectedItem = items.find(item => item.id === selectedItemId);
+
+    return (
+        <div className="h-full flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex-shrink-0">
+                <h2 className="text-xl font-bold text-neutral">Canvas</h2>
+                <p className="text-sm text-gray-500">A workspace for your pinned items.</p>
+            </div>
+            
+            {/* Chips for navigation */}
+            {items.length > 0 && (
+                <div className="flex-shrink-0 p-3 border-b border-gray-200 bg-white overflow-x-auto">
+                    <div className="flex items-center gap-2">
+                        {items.map(item => (
+                            <div key={item.id} className="relative group flex-shrink-0">
+                                <button
+                                    onClick={() => onSelectItem(item.id)}
+                                    className={`flex items-center gap-2 pl-3 pr-8 py-1.5 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
+                                        selectedItemId === item.id 
+                                        ? 'bg-blue-600 text-white shadow' 
+                                        : 'bg-white hover:bg-gray-200 text-gray-700 border border-gray-300'
+                                    }`}
+                                >
+                                    <span>{getChipTitle(item)}</span>
+                                </button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onCloseItem(item.id); }} 
+                                    className={`absolute top-1/2 right-1.5 -translate-y-1/2 p-1 rounded-full transition-colors ${
+                                        selectedItemId === item.id
+                                        ? 'text-white/70 hover:text-white hover:bg-black/20'
+                                        : 'text-gray-400 hover:text-gray-700 hover:bg-gray-300'
+                                    }`}
+                                    aria-label={`Remove ${getChipTitle(item)}`}
+                                >
+                                    <CloseIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+            
+            <div className="flex-grow overflow-y-auto p-4 bg-gray-50">
+                {items.length === 0 && (
+                    <div className="text-center text-gray-500 mt-8">
+                        <p>Your canvas is empty.</p>
+                        <p className="text-sm">Hover over chat items and click the pin icon to add them here.</p>
+                    </div>
+                )}
+                {selectedItem && (() => {
+                    switch (selectedItem.type) {
+                        case 'text':
+                            return (
+                                <SelectedItemWrapper title={selectedItem.title}>
+                                    <TextCanvasItem item={selectedItem} onUpdate={onUpdateItem as (i: CanvasTextItem) => void} />
+                                </SelectedItemWrapper>
+                            );
+                        case 'beam_input':
+                             const isAnalyzing = analyzingId === selectedItem.id;
+                             return (
+                                <SelectedItemWrapper title={`Edit: ${selectedItem.data.Name}`}>
+                                   {isAnalyzing && (
+                                       <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
+                                           <Spinner />
+                                           <span className="ml-2">Analyzing...</span>
+                                       </div>
+                                   )}
+                                   <BeamInputForm
+                                        initialData={selectedItem.data}
+                                        onChange={(updatedData) => onUpdateItem({ ...selectedItem, data: updatedData })}
+                                        onSubmit={(data) => handleFormSubmit(data, selectedItem.id)}
+                                        submitButtonText="Analyze in Canvas"
+                                    />
+                                </SelectedItemWrapper>
+                            );
+                        case 'beam_output':
+                            return (
+                                <SelectedItemWrapper title={`Results: ${selectedItem.inputData.Name}`}>
+                                    <BeamAnalysisDisplay input={selectedItem.inputData} output={selectedItem.outputData} />
+                                </SelectedItemWrapper>
+                            );
+                        default:
+                            return null;
+                    }
+                })()}
+            </div>
+        </div>
+    );
+};

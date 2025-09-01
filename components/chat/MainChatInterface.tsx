@@ -1,0 +1,258 @@
+// components/chat/MainChatInterface.tsx: The main UI for the chat, including messages and input controls.
+
+import React, { useRef, useEffect, useState } from 'react';
+import { ChatMessage, Action, StatusMessage } from '../../customTypes/types';
+import { BeamInput, Element as StructuralElement } from '../../customTypes/structuralElement';
+import { SectionProperties } from '../../customTypes/SectionProperties';
+import { BeamInputForm } from '../structuralEngineering/BeamInputForm';
+import { BeamAnalysisDisplay, type BeamAnalysisDisplayHandle } from '../structuralEngineering/BeamAnalysisDisplay';
+// FIX: Changed to default import as StructuralElementForm is now a default export.
+import StructuralElementForm from '../structuralEngineering/StructuralElementForm';
+import { Spinner } from '../utility/Spinner';
+import { SendIcon, UploadIcon, AddIcon, DocumentMagnifyingGlassIcon, PanelRightOpenIcon, ChatBubbleLeftRightIcon, MicrophoneIcon, CloseIcon, BuildingBlockIcon, ListBulletIcon } from '../utility/icons';
+
+// HACK: Add barebones type for SpeechRecognition to fix build error.
+interface SpeechRecognition {
+  continuous: boolean; interimResults: boolean; lang: string;
+  start: () => void; stop: () => void;
+  onstart: () => void; onend: () => void;
+  onerror: (event: { error: string }) => void;
+  onresult: (event: { results: { transcript: string }[][] }) => void;
+}
+
+type AppContext = 'chat' | 'canvas' | 'attachm.';
+
+// Props definition for the MainChatInterface component.
+interface MainChatInterfaceProps {
+    messages: ChatMessage[];
+    isLoading: boolean;
+    userInput: string;
+    setUserInput: React.Dispatch<React.SetStateAction<string>>;
+    fileToUpload: File | null;
+    setFileToUpload: React.Dispatch<React.SetStateAction<File | null>>;
+    context: AppContext;
+    setContext: React.Dispatch<React.SetStateAction<AppContext>>;
+    handleSendMessage: () => Promise<void>;
+    handleAddBeamClick: () => void;
+    handleAddElementClick: () => void;
+    setIsUploadModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+    handleOpenSectionsModal: () => void;
+    isPersistenceEnabled: boolean;
+    handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    sections: SectionProperties[];
+    // BeamInputForm handlers
+    handleFormChange: (messageId: string, formIndex: number, updatedData: BeamInput) => void;
+    handleFormSubmit: (data: BeamInput, messageId: string, formIndex: number) => Promise<void>;
+    handleFormCancel: (messageId: string, formIndex: number) => void;
+    // StructuralElementForm handlers
+    handleElementFormChange: (messageId: string, formIndex: number, updatedData: StructuralElement) => void;
+    handleElementFormSubmit: (data: StructuralElement, messageId: string, formIndex: number) => Promise<void>;
+    handleElementFormCancel: (messageId: string, formIndex: number) => void;
+    handleElementFormSave: (data: StructuralElement, messageId?: string) => Promise<void>;
+    // statusMessage: StatusMessage | null; // Removed - now each message has its own statusMessage
+    // General handlers
+    handleAddToCanvas: (msg: ChatMessage, formIndex?: number) => void;
+    analysisDisplayRefs: React.MutableRefObject<Record<string, BeamAnalysisDisplayHandle | null>>;
+    handleUndo: () => void;
+    handleActionClick: (messageId: string, action: Action) => void;
+}
+
+// Helper function to parse message text and render special links (like Undo) as buttons.
+const renderMessageText = (text: string, handleUndo: () => void) => {
+    const undoRegex = /\[Undo\]\(action:undo\)/g;
+    const parts = text.split(undoRegex);
+    if (parts.length <= 1) return <p className="whitespace-pre-wrap">{text}</p>;
+    return (
+        <p className="whitespace-pre-wrap">
+            {parts.map((part, index) => (
+                <React.Fragment key={index}>
+                    {part}
+                    {index < parts.length - 1 && (
+                        <button onClick={handleUndo} className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 font-semibold rounded-md hover:bg-blue-200 transition-colors text-sm">Undo</button>
+                    )}
+                </React.Fragment>
+            ))}
+        </p>
+    );
+};
+
+export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
+    messages, isLoading, userInput, setUserInput, fileToUpload, setFileToUpload,
+    context, setContext, handleSendMessage, handleAddBeamClick, handleAddElementClick, setIsUploadModalOpen,
+    handleOpenSectionsModal, isPersistenceEnabled, handleFileChange, handleFormChange, handleFormSubmit, handleFormCancel,
+    handleAddToCanvas, analysisDisplayRefs, handleUndo, handleActionClick,
+    handleElementFormChange, handleElementFormSubmit, handleElementFormCancel, handleElementFormSave,
+    sections
+}) => {
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isListening, setIsListening] = useState(false);
+    const recognitionRef = useRef<SpeechRecognition | null>(null);
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const isSpeechSupported = !!SpeechRecognitionAPI;
+
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
+
+    const handleToggleListening = () => {
+        if (!isSpeechSupported) { console.error("Speech recognition not supported."); return; }
+        if (isListening) { recognitionRef.current?.stop(); return; }
+        const recognition = new SpeechRecognitionAPI();
+        recognitionRef.current = recognition;
+        recognition.continuous = false; recognition.interimResults = false; recognition.lang = 'en-US';
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => { setIsListening(false); recognitionRef.current = null; };
+        recognition.onerror = (event) => { console.error('Speech recognition error:', event.error); setIsListening(false); };
+        recognition.onresult = (event) => { const transcript = event.results[0][0].transcript; setUserInput(prev => prev ? `${prev} ${transcript}` : transcript); };
+        recognition.start();
+    };
+
+    return (
+        <>
+            <main className="flex-grow container mx-auto p-4 overflow-y-auto flex flex-col">
+                <div className="flex-grow space-y-4">
+                {messages.map((msg) => (
+                    <div key={msg.id} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    {msg.sender === 'ai' && <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">R</div>}
+                    
+                    <div className={`relative group max-w-2xl p-4 rounded-2xl ${msg.sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-base-100 text-gray-800 rounded-bl-none'} ${msg.type.endsWith('_form') || msg.type.endsWith('display') ? 'w-full' : ''}`}>
+                        
+                        {msg.text && ( <div className="mb-2">{renderMessageText(msg.text, handleUndo)}</div> )}
+
+                        {/* Interactive Action Buttons */}
+                        {msg.actions && !msg.actionsConsumed && (
+                            <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-3">
+                                {msg.actions.map((action, index) => {
+                                    if (action.type === 'confirm_attachment_analysis') {
+                                        return <button key={index} onClick={() => handleActionClick(msg.id, action)} className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-focus transition-colors text-sm">Proceed</button>;
+                                    }
+                                    if (action.type === 'cancel_attachment_analysis') {
+                                        return <button key={index} onClick={() => handleActionClick(msg.id, action)} className="px-4 py-2 bg-gray-200 text-neutral font-semibold rounded-lg hover:bg-gray-300 transition-colors text-sm">Cancel</button>;
+                                    }
+                                    return null;
+                                })}
+                            </div>
+                        )}
+                        
+                        {msg.type === 'beam_input_form' && msg.beamInputsData && (
+                        <div className="space-y-4">
+                            {msg.beamInputsData.map((beamInput, index) => (
+                            <div key={`${msg.id}-${index}`} className="relative group/form">
+                                <BeamInputForm initialData={beamInput} onChange={(data) => handleFormChange(msg.id, index, data)} isFormActive={!!msg.isFormActive?.[index]} onSubmit={(data) => handleFormSubmit(data, msg.id, index)} onCancel={() => handleFormCancel(msg.id, index)} />
+                                <button onClick={() => handleAddToCanvas(msg, index)} title="Pin to canvas" className="absolute -top-2 -right-2 p-1.5 rounded-full bg-white shadow-md hover:bg-gray-100 text-gray-600 opacity-0 group-hover/form:opacity-100 transition-opacity">
+                                    <PanelRightOpenIcon className="w-5 h-5" />
+                                </button>
+                            </div>
+                            ))}
+                        </div>
+                        )}
+                        
+                        {msg.type === 'element_form' && msg.elementData && (
+                            <div className="space-y-4">
+                                {msg.elementData.map((element, index) => (
+                                    <div key={`${msg.id}-${index}`} className="relative group/form">
+                                        <StructuralElementForm
+                                            elementData={element}
+                                            isFormActive={!!msg.isFormActive?.[index]}
+                                            onSubmit={(data) => handleElementFormSubmit(data, msg.id, index)}
+                                            onCancel={() => handleElementFormCancel(msg.id, index)}
+                                            onSave={(data) => handleElementFormSave(data, msg.id)}
+                                            statusMessage={msg.statusMessage || null}
+                                            sections={sections}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+
+                        {msg.type === 'beam_output_display' && msg.beamOutputData && msg.beamInputsData?.[0] && (() => {
+                            const beamName = msg.beamInputsData[0].Name;
+                            return (
+                            <div className="relative group/form">
+                                <BeamAnalysisDisplay ref={(el: BeamAnalysisDisplayHandle | null) => { analysisDisplayRefs.current[beamName] = el; }} output={msg.beamOutputData} input={msg.beamInputsData[0]} />
+                                <button onClick={() => handleAddToCanvas(msg)} title="Pin to canvas" className="absolute top-2 right-2 p-1.5 rounded-full bg-white shadow-md hover:bg-gray-100 text-gray-600 opacity-0 group-hover/form:opacity-100 transition-opacity">
+                                    <PanelRightOpenIcon className="w-5 h-5" />
+                                </button>
+                            </div>
+                            );
+                        })()}
+
+                        {(msg.type === 'text' || msg.type === 'error') && !msg.actions && (
+                            <button onClick={() => handleAddToCanvas(msg)} title="Pin to canvas" className="absolute top-1 right-1 p-1 rounded-full bg-white/20 hover:bg-white/40 text-current opacity-0 group-hover:opacity-100 transition-opacity">
+                                <PanelRightOpenIcon className="w-4 h-4" />
+                            </button>
+                        )}
+                    </div>
+                    
+                    {msg.sender === 'user' && <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white font-bold text-lg flex-shrink-0">U</div>}
+                    </div>
+                ))}
+                {isLoading && (
+                    <div className="flex items-end gap-2 justify-start">
+                    <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">R</div>
+                    <div className="max-w-2xl p-4 rounded-2xl bg-base-100 text-gray-800 rounded-bl-none">
+                        <div className="flex items-center space-x-2"> <Spinner /> <span className="italic text-gray-500">AI is thinking...</span> </div>
+                    </div>
+                    </div>
+                )}
+                <div ref={messagesEndRef} />
+                </div>
+            </main>
+
+            <footer className="flex-shrink-0 bg-base-100 border-t border-base-300 z-10">
+                <div className="container mx-auto p-4 space-y-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={handleAddBeamClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <AddIcon className="w-4 h-4" /> New Beam </button>
+                        <button onClick={handleAddElementClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <BuildingBlockIcon className="w-4 h-4" /> New Element </button>
+                        <button onClick={() => setIsUploadModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <DocumentMagnifyingGlassIcon className="w-4 h-4" /> Analyze Drawing </button>
+                        <button
+                            onClick={handleOpenSectionsModal}
+                            disabled={!isPersistenceEnabled}
+                            title={!isPersistenceEnabled ? "Requires Firebase configuration to save and manage sections" : "Manage Sections"}
+                            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <ListBulletIcon className="w-4 h-4" /> Manage Sections
+                        </button>
+                        {fileToUpload && (
+                            <div className="flex items-center gap-2 pl-3 pr-2 py-1.5 text-sm font-medium text-blue-800 bg-blue-100 rounded-full">
+                                <UploadIcon className="w-4 h-4 flex-shrink-0" />
+                                <span className="truncate max-w-xs">{fileToUpload.name}</span>
+                                <button onClick={() => setFileToUpload(null)} className="p-1 rounded-full hover:bg-blue-200 transition-colors" aria-label="Remove attached file"> <CloseIcon className="w-4 h-4" /> </button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                        <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="p-3 rounded-full hover:bg-base-200 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors" aria-label="Upload drawing" title="Upload PDF, PNG, or JPG drawing"> <UploadIcon className="w-6 h-6 text-neutral" /> </button>
+                        
+                        {isSpeechSupported && (
+                            <button onClick={handleToggleListening} disabled={isLoading} className={`p-3 rounded-full transition-colors ${ isListening ? 'bg-red-500 text-white animate-pulse' : 'hover:bg-base-200 text-neutral' } disabled:bg-gray-300 disabled:cursor-not-allowed`} aria-label={isListening ? "Stop listening" : "Start voice input"} title={isListening ? "Stop listening" : "Start voice input"}> <MicrophoneIcon className="w-6 h-6" /> </button>
+                        )}
+
+                        <div className="relative flex items-center w-full border border-base-300 rounded-full focus-within:ring-2 focus-within:ring-primary transition-shadow bg-white">
+                        <div className="relative inline-block text-left group">
+                            <button className="flex items-center gap-2 pl-4 pr-3 py-2 text-sm font-medium text-neutral bg-base-200 h-full rounded-l-full border-r border-base-300 hover:bg-base-300 transition-colors">
+                                <ChatBubbleLeftRightIcon className="w-4 h-4 flex-shrink-0" />
+                                <span className="hidden sm:inline">Context:</span>
+                                <span className="font-bold capitalize">{context}</span>
+                            </button>
+                            <div className="absolute bottom-full mb-2 w-40 origin-bottom-left bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
+                                <div className="py-1" role="menu" aria-orientation="vertical">
+                                    <a href="#" onClick={(e) => { e.preventDefault(); setContext('chat'); }} className={`block px-4 py-2 text-sm ${context === 'chat' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Chat</a>
+                                    <a href="#" onClick={(e) => { e.preventDefault(); setContext('canvas'); }} className={`block px-4 py-2 text-sm ${context === 'canvas' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Canvas</a>
+                                    <a href="#" onClick={(e) => { e.preventDefault(); setContext('attachm.'); }} className={`block px-4 py-2 text-sm ${context === 'attachm.' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Attachm.</a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="Describe your beam, upload a drawing, or ask a question..." className="w-full px-4 py-2 border-none focus:outline-none bg-transparent" disabled={isLoading} />
+                        </div>
+
+                        <button onClick={handleSendMessage} disabled={isLoading || (!userInput.trim() && !fileToUpload)} className="bg-primary text-white p-3 rounded-full hover:bg-primary-focus disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors" aria-label="Send message"> <SendIcon className="w-6 h-6" /> </button>
+                    </div>
+                </div>
+            </footer>
+        </>
+    );
+};

@@ -1,0 +1,8 @@
+{
+  "name": "That Cool Structural AI v3",
+  "description": "An AI-powered chat assistant for structural beam analysis. Describe your beam, supports, and loads, and the AI will help you perform the analysis and visualize the results, including shear force, bending moment, and deflection diagrams.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "prompt": ""
+}
