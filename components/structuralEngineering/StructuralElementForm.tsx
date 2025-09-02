@@ -88,10 +88,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         }
     };
 
-    // Helper function to check if any design results have failed
-    const hasFailedDesignResults = (): boolean => {
-        return element.designResults?.some(result => result.capacity_data.status === 'FAIL') || false;
-    };
+    
 
     //#region Effect Hooks
     
@@ -459,6 +456,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const anySupportInvalid = element.supports.some(s => isSupportPositionInvalid(s.position)) || hasDuplicateSupportPositions();
     const anyLoadInvalid = element.appliedLoads.some(l => l.position.some(isLoadPositionInvalid));
     const formHasError = anySupportInvalid || anyLoadInvalid;
+
+    // Helper function to check if any design results have failed
+    const hasFailedDesignResults = (): boolean => {
+        return element.designResults?.some(result => result.capacity_data.status === 'FAIL') || false;
+    };
 
     // Find the governing design result to display in the main summary
     const governingResult = element.designResults && element.designResults.length > 0
@@ -1463,10 +1465,27 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             {/* Action Buttons Section*/}
             <div className="flex justify-end items-center gap-4 pt-4 border-t">
                 {onCancel && <button type="button" onClick={handleCancel} className="px-5 py-2.5 bg-gray-200 text-neutral font-semibold rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>}
-                <button type="button" onClick={handleSave} disabled={statusMessage?.type === 'loading'} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors">
+                <button 
+                    type="button" 
+                    onClick={handleSave} 
+                    disabled={statusMessage?.type === 'loading'} 
+                    className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+                >
                     <SaveIcon className="w-5 h-5"/> {isSaved ? 'Update' : 'Save'}
                 </button>
-                <button type="button" onClick={handleSubmit} className="px-5 py-2.5 bg-primary text-white font-semibold rounded-lg hover:bg-primary-focus transition-colors">Design Element</button>
+                <button 
+                    type="button" 
+                    onClick={handleSubmit} 
+                    className={`px-5 py-2.5 font-semibold rounded-lg transition-colors ${
+                        !element.designResults || element.designResults.length === 0
+                        ? 'bg-white text-gray-800 border border-gray-300 hover:bg-gray-100' // Default state
+                        : hasFailedDesignResults()
+                        ? 'bg-pink-500 hover:bg-pink-600 text-white' // Fail state
+                        : 'bg-green-500 hover:bg-green-600 text-white' // Success state
+                    }`}
+                >
+                    Design Element
+                </button>
             </div>
             
            

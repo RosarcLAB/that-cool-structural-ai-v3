@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Project } from '../../customTypes/types';
 
 // SVG Icon Components
@@ -57,30 +57,65 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   onShare,
   isDefault = false,
 }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleMenuToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsMenuOpen(prev => !prev);
+  };
+
+  const handleMenuClose = () => {
+    setIsMenuOpen(false);
+  };
+
+  // Effect to close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        handleMenuClose();
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
 
   const handleSetDefault = (e: React.MouseEvent) => {
     e.stopPropagation();
     onSetDefault(project.id);
+    handleMenuClose();
   };
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     onEdit(project);
+    handleMenuClose();
   };
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
     onSave(project);
+    handleMenuClose();
   };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     onDelete(project.id);
+    handleMenuClose();
   };
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
     onShare(project.id);
+    handleMenuClose();
   };
 
   const handleCardClick = () => {
@@ -102,28 +137,44 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           <p className="text-xs text-base-content/50">{project.elementCount} elements</p>
         </div>
         
-        <div className="dropdown dropdown-end flex-shrink-0">
-          <label tabIndex={0} className="btn btn-ghost btn-xs btn-circle" onClick={(e) => e.stopPropagation()}>
+        <div className="dropdown dropdown-end flex-shrink-0" ref={dropdownRef}>
+          <button onClick={handleMenuToggle} className="btn btn-ghost btn-xs btn-circle">
             <MoreVertIcon className="w-5 h-5" />
-          </label>
-          <ul tabIndex={0} className="dropdown-content menu p-2 shadow bg-base-200 rounded-box w-52 z-10">
-            <li><a onClick={handleSetDefault}>
-              <BookmarkIcon className={`w-4 h-4 ${isDefault ? 'text-primary' : ''}`} /> 
-              {isDefault ? 'Default Project' : 'Set as Default'}
-            </a></li>
-            <li><a onClick={handleEdit}>
-              <EditIcon className="w-4 h-4" /> Edit Project
-            </a></li>
-            <li><a onClick={handleSave}>
-              <SaveIcon className="w-4 h-4" /> Save
-            </a></li>
-            <li><a onClick={handleDelete}>
-              <DeleteIcon className="w-4 h-4" /> Delete
-            </a></li>
-            <li><a onClick={handleShare}>
-              <ShareIcon className="w-4 h-4" /> Share
-            </a></li>
-          </ul>
+          </button>
+          {isMenuOpen && (
+            <ul tabIndex={0} className="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-lg w-56 z-10">
+              <li>
+                <a onClick={handleSetDefault} className="flex items-center gap-3 py-2">
+                  <BookmarkIcon className={`w-5 h-5 ${isDefault ? 'text-primary' : ''}`} />
+                  <span>{isDefault ? 'Default Project' : 'Set as Default'}</span>
+                </a>
+              </li>
+              <li>
+                <a onClick={handleEdit} className="flex items-center gap-3 py-2">
+                  <EditIcon className="w-5 h-5" />
+                  <span>Edit Project</span>
+                </a>
+              </li>
+              <li>
+                <a onClick={handleSave} className="flex items-center gap-3 py-2">
+                  <SaveIcon className="w-5 h-5" />
+                  <span>Save</span>
+                </a>
+              </li>
+              <li>
+                <a onClick={handleDelete} className="flex items-center gap-3 py-2">
+                  <DeleteIcon className="w-5 h-5" />
+                  <span>Delete</span>
+                </a>
+              </li>
+              <li>
+                <a onClick={handleShare} className="flex items-center gap-3 py-2">
+                  <ShareIcon className="w-5 h-5" />
+                  <span>Share</span>
+                </a>
+              </li>
+            </ul>
+          )}
         </div>
       </div>
     </div>

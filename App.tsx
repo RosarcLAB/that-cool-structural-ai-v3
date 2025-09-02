@@ -436,22 +436,22 @@ const App: React.FC = () => {
     const newElementData: StructuralElement = {
         name: `New Element ${elementCount + 1}`,
         type: 'Joist',
-        span: 5,
+        span: 2.5,
         spacing: 0.6,
         section_count: 1,
         sectionName: defaultSectionName,
         sections: firstSection ? [firstSection] : [],
         supports: [
             { position: 0, fixity: SupportFixityType.Pinned },
-            { position: 5, fixity: SupportFixityType.Roller }
+            { position: 2.5, fixity: SupportFixityType.Roller }
         ],
         appliedLoads: [
             {
                 type: LoadType.UDL,
-                position: ['0', '5'],
+                position: ['0', '2.5'],
                 forces: [
-                    { magnitude: [300], loadCase: LoadCaseType.Dead },
-                    { magnitude: [9000], loadCase: LoadCaseType.Live }
+                    { magnitude: [400], loadCase: LoadCaseType.Dead },
+                    { magnitude: [450], loadCase: LoadCaseType.Live }
                 ]
             }
         ],
@@ -724,6 +724,7 @@ const App: React.FC = () => {
             handleElementFormSave={handleElementFormSave}
             sections={sections}
             user={user}
+            projects={projects}
           />
         </div>
         

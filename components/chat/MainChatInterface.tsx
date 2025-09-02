@@ -40,6 +40,7 @@ interface MainChatInterfaceProps {
     isPersistenceEnabled: boolean;
     handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
     sections: SectionProperties[];
+    projects: any[]; // Add project prop
     user: any; // Add user prop for authentication status
     // BeamInputForm handlers
     handleFormChange: (messageId: string, formIndex: number, updatedData: BeamInput) => void;
@@ -83,7 +84,7 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
     handleOpenSectionsModal, isPersistenceEnabled, handleFileChange, handleFormChange, handleFormSubmit, handleFormCancel,
     handleAddToCanvas, analysisDisplayRefs, handleUndo, handleActionClick,
     handleElementFormChange, handleElementFormSubmit, handleElementFormCancel, handleElementFormSave,
-    sections, user
+    sections, user, projects
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -160,6 +161,7 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                                             onSave={(data) => handleElementFormSave(data, msg.id)}
                                             statusMessage={msg.statusMessage || null}
                                             sections={sections}
+                                            projectData={projects}
                                         />
                                     </div>
                                 ))}
