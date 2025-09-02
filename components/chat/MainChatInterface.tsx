@@ -40,6 +40,7 @@ interface MainChatInterfaceProps {
     isPersistenceEnabled: boolean;
     handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
     sections: SectionProperties[];
+    user: any; // Add user prop for authentication status
     // BeamInputForm handlers
     handleFormChange: (messageId: string, formIndex: number, updatedData: BeamInput) => void;
     handleFormSubmit: (data: BeamInput, messageId: string, formIndex: number) => Promise<void>;
@@ -82,7 +83,7 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
     handleOpenSectionsModal, isPersistenceEnabled, handleFileChange, handleFormChange, handleFormSubmit, handleFormCancel,
     handleAddToCanvas, analysisDisplayRefs, handleUndo, handleActionClick,
     handleElementFormChange, handleElementFormSubmit, handleElementFormCancel, handleElementFormSave,
-    sections
+    sections, user
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,7 +108,8 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
     };
 
     return (
-        <>
+        <>  
+            {/** Chat messages render*/}
             <main className="flex-grow container mx-auto p-4 overflow-y-auto flex flex-col">
                 <div className="flex-grow space-y-4">
                 {messages.map((msg) => (
@@ -199,8 +201,12 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                 </div>
             </main>
 
+            {/** Input area */}
             <footer className="flex-shrink-0 bg-base-100 border-t border-base-300 z-10">
                 <div className="container mx-auto p-4 space-y-3">
+
+                    {/** Action buttons first line - only show when authenticated */}
+                    {user && (
                     <div className="flex items-center gap-2 flex-wrap">
                         <button onClick={handleAddBeamClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <AddIcon className="w-4 h-4" /> New Beam </button>
                         <button onClick={handleAddElementClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <BuildingBlockIcon className="w-4 h-4" /> New Element </button>
@@ -221,34 +227,40 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                             </div>
                         )}
                     </div>
+                    )}
 
+                    {/** Input area second line*/}
                     <div className="flex items-center gap-4">
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".pdf,.png,.jpg,.jpeg" />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="p-3 rounded-full hover:bg-base-200 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors" aria-label="Upload drawing" title="Upload PDF, PNG, or JPG drawing"> <UploadIcon className="w-6 h-6 text-neutral" /> </button>
                         
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="p-3 rounded-full hover:bg-base-200 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors" aria-label="Upload drawing" title="Upload PDF, PNG, or JPG drawing"> <UploadIcon className="w-6 h-6 text-neutral" /> </button>
+
+                        {/* Voice input button */}
                         {isSpeechSupported && (
                             <button onClick={handleToggleListening} disabled={isLoading} className={`p-3 rounded-full transition-colors ${ isListening ? 'bg-red-500 text-white animate-pulse' : 'hover:bg-base-200 text-neutral' } disabled:bg-gray-300 disabled:cursor-not-allowed`} aria-label={isListening ? "Stop listening" : "Start voice input"} title={isListening ? "Stop listening" : "Start voice input"}> <MicrophoneIcon className="w-6 h-6" /> </button>
                         )}
 
+                        {/** Context selector and Input field*/}
                         <div className="relative flex items-center w-full border border-base-300 rounded-full focus-within:ring-2 focus-within:ring-primary transition-shadow bg-white">
-                        <div className="relative inline-block text-left group">
-                            <button className="flex items-center gap-2 pl-4 pr-3 py-2 text-sm font-medium text-neutral bg-base-200 h-full rounded-l-full border-r border-base-300 hover:bg-base-300 transition-colors">
-                                <ChatBubbleLeftRightIcon className="w-4 h-4 flex-shrink-0" />
-                                <span className="hidden sm:inline">Context:</span>
-                                <span className="font-bold capitalize">{context}</span>
-                            </button>
-                            <div className="absolute bottom-full mb-2 w-40 origin-bottom-left bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
-                                <div className="py-1" role="menu" aria-orientation="vertical">
-                                    <a href="#" onClick={(e) => { e.preventDefault(); setContext('chat'); }} className={`block px-4 py-2 text-sm ${context === 'chat' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Chat</a>
-                                    <a href="#" onClick={(e) => { e.preventDefault(); setContext('canvas'); }} className={`block px-4 py-2 text-sm ${context === 'canvas' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Canvas</a>
-                                    <a href="#" onClick={(e) => { e.preventDefault(); setContext('attachm.'); }} className={`block px-4 py-2 text-sm ${context === 'attachm.' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Attachm.</a>
+                            <div className="relative inline-block text-left group">
+                                <button className="flex items-center gap-2 pl-4 pr-3 py-2 text-sm font-medium text-neutral bg-base-200 h-full rounded-l-full border-r border-base-300 hover:bg-base-300 transition-colors">
+                                    <ChatBubbleLeftRightIcon className="w-4 h-4 flex-shrink-0" />
+                                    <span className="hidden sm:inline">Context:</span>
+                                    <span className="font-bold capitalize">{context}</span>
+                                </button>
+                                <div className="absolute bottom-full mb-2 w-40 origin-bottom-left bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-20">
+                                    <div className="py-1" role="menu" aria-orientation="vertical">
+                                        <a href="#" onClick={(e) => { e.preventDefault(); setContext('chat'); }} className={`block px-4 py-2 text-sm ${context === 'chat' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Chat</a>
+                                        <a href="#" onClick={(e) => { e.preventDefault(); setContext('canvas'); }} className={`block px-4 py-2 text-sm ${context === 'canvas' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Canvas</a>
+                                        <a href="#" onClick={(e) => { e.preventDefault(); setContext('attachm.'); }} className={`block px-4 py-2 text-sm ${context === 'attachm.' ? 'bg-teal-100 text-teal-800' : 'text-gray-700 hover:bg-gray-100'}`} role="menuitem">Attachm.</a>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="Describe your beam, upload a drawing, or ask a question..." className="w-full px-4 py-2 border-none focus:outline-none bg-transparent" disabled={isLoading} />
+                            
+                            <input type="text" value={userInput} onChange={(e) => setUserInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()} placeholder="Describe your beam, upload a drawing, or ask a question..." className="w-full px-4 py-2 border-none focus:outline-none bg-transparent" disabled={isLoading} />
                         </div>
 
+                        {/** Send button */}
                         <button onClick={handleSendMessage} disabled={isLoading || (!userInput.trim() && !fileToUpload)} className="bg-primary text-white p-3 rounded-full hover:bg-primary-focus disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors" aria-label="Send message"> <SendIcon className="w-6 h-6" /> </button>
                     </div>
                 </div>

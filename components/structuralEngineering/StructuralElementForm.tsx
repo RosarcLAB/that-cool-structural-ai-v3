@@ -132,27 +132,25 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     }, [element.span]);
     // Recompute all load combinations whenever applied loads or combinations change
     useEffect(() => {
-        setElement(prev => recomputeAllLoadCombinations(prev));
+        const newElement = recomputeAllLoadCombinations(element);
+        if (JSON.stringify(newElement) !== JSON.stringify(element)) {
+            setElement(newElement);
+        }
     }, [element.appliedLoads, element.loadCombinations]);
     
     // Update local element state when parent passes new elementData (e.g., with design results)
     useEffect(() => {
-        // Always update if the incoming elementData has design results to ensure latest API results are shown 
-        if (elementData.designResults && elementData.designResults.length > 0) {
-            // Create a timestamp-based comparison to detect if results are newer
-            const incomingTimestamp = JSON.stringify(elementData.designResults);
-            const currentTimestamp = element.designResults ? JSON.stringify(element.designResults) : '';
-            
-            if (incomingTimestamp !== currentTimestamp) {
-                console.log('Updating element with new design results from parent:', elementData.designResults);
-                setElement(elementData);
-            }
+        // Deep comparison to prevent infinite loops
+        if (JSON.stringify(elementData) !== JSON.stringify(element)) {
+            setElement(elementData);
         }
-    }, [elementData.designResults]);
+    }, [elementData]);
 
     // Sync isSaved state when elementData changes
     useEffect(() => {
-        setIsSaved(elementData.isSaved || false);
+        if (elementData.isSaved !== isSaved) {
+            setIsSaved(elementData.isSaved || false);
+        }
     }, [elementData.isSaved]);
     //#endregion
 

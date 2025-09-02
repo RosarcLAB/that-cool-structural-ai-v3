@@ -3,6 +3,7 @@
 // FIX: Switched to named imports for Firebase v9+ modular SDK.
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getFirestore, enableIndexedDbPersistence, type Firestore } from 'firebase/firestore';
+import { getAuth, type Auth } from 'firebase/auth';
 
 // --- IMPORTANT ---
 // Replace the placeholder values below with your own Firebase project's configuration.
@@ -34,11 +35,13 @@ export const isFirebaseConfigured = firebaseConfig.apiKey !== "YOUR_API_KEY" && 
 
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
+let auth: Auth | null = null;
 
 // Only initialize Firebase if the configuration is valid.
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
+  auth = getAuth(app);
   
   // Enable offline persistence to improve user experience during connection issues.
   try {
@@ -58,4 +61,4 @@ if (isFirebaseConfigured) {
 }
 
 // Export the potentially null Firestore instance.
-export { db };
+export { db, auth };

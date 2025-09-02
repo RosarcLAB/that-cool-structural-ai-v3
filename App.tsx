@@ -13,10 +13,14 @@ import { BeamAnalysisDisplay, type BeamAnalysisDisplayHandle } from './component
 import { UploadDrawingModal } from './components/chat/UploadDrawingModal';
 import { ManageSectionsModal } from './components/structuralEngineering/ManageSectionsModal';
 import { Canvas } from './components/Canvas';
-import { ChatIcon, PanelRightOpenIcon, PanelLeftCloseIcon } from './components/utility/icons';
+import { ChatIcon, PanelRightOpenIcon, PanelLeftCloseIcon, FolderIcon } from './components/utility/icons';
 import { MainChatInterface } from './components/chat/MainChatInterface';
 import { ProcessAiDecision } from './AIProcesses/ProcessAiDecision';
 import { ProcessAiActions } from './AIProcesses/ProcessAiActions';
+import SignIn from './components/auth/SignIn';
+import { auth } from './config/firebase';
+import { User, onAuthStateChanged } from 'firebase/auth';
+import { ProjectsDrawer } from './components/projects/ProjectsDrawer';
 
 
 const MAX_HISTORY_STATES = 30;
@@ -46,6 +50,8 @@ const App: React.FC = () => {
   const [selectedCanvasItemId, setSelectedCanvasItemId] = useState<string | null>(null);
   // State to determine the context of user commands (chat or canvas).
   const [context, setContext] = useState<AppContext>('chat');
+  // State for the current authenticated user
+  const [user, setUser] = useState<User | null>(null);
   // Ref to hold handles for all rendered BeamAnalysisDisplay components to allow programmatic control.
   const analysisDisplayRefs = useRef<Record<string, BeamAnalysisDisplayHandle | null>>({});
   // State for managing the width of the resizable canvas panel.
@@ -54,6 +60,9 @@ const App: React.FC = () => {
   const [sections, setSections] = useState<SectionProperties[]>([]);
   // State to hold the global library of projects.
   const [projects, setProjects] = useState<Project[]>([]);
+  const [isProjectsDrawerOpen, setIsProjectsDrawerOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [projectSearchTerm, setProjectSearchTerm] = useState('');
 
   // Fetches or refreshes the list of sections from the database.
   const refreshSections = useCallback(async () => {
@@ -70,9 +79,7 @@ const App: React.FC = () => {
   // Fetches or refreshes the list of projects from the database.
   const refreshProjects = useCallback(async () => {
     try {
-        // TODO: Replace with actual user ID from Firebase Auth
-        // For now, we'll use a placeholder or skip if no user is authenticated
-        const userId = 'demo-user-id'; // Replace with actual user ID from auth
+        const userId = user?.uid || 'demo-user-id'; // Use actual user ID if authenticated
         const fetchedProjects = await projectService.getUserProjects(userId);
         setProjects(fetchedProjects);
         // Optional: add a success status message if needed
@@ -82,7 +89,7 @@ const App: React.FC = () => {
         // Don't show error message to user for now, as this might be expected during development
         // addMessage({ sender: 'ai', text: `Error fetching projects: ${errorMessage}`, type: 'error' });
     }
-  }, []);
+  }, [user]);
 
   // Initial fetch of sections when the app loads.
   useEffect(() => {
@@ -93,6 +100,16 @@ const App: React.FC = () => {
   useEffect(() => {
     refreshProjects();
   }, [refreshProjects]);
+
+  // Listen for authentication state changes
+  useEffect(() => {
+    if (auth) {
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        setUser(user);
+      });
+      return unsubscribe;
+    }
+  }, []);
   
   // Saves a snapshot of the current messages state to the history for undo purposes.
   const saveHistorySnapshot = () => {
@@ -472,6 +489,16 @@ const App: React.FC = () => {
     });
   };
 
+  const handleElementClick = useCallback((element: StructuralElement) => {
+    addMessage({
+      sender: 'ai',
+      text: `Loaded element "${element.name}" from project. You can edit its properties below.`,
+      type: 'element_form',
+      elementData: [element],
+      isFormActive: [true]
+    });
+  }, [addMessage]);
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -620,6 +647,15 @@ const App: React.FC = () => {
     window.addEventListener('mouseup', handleMouseUp);
   }, []);
 
+  const filteredProjects = projects.filter(project =>
+    project.name.toLowerCase().includes(projectSearchTerm.toLowerCase())
+  );
+
+  const filteredElements = selectedProject
+    ? (selectedProject.elements || []).filter(element =>
+        element.name.toLowerCase().includes(projectSearchTerm.toLowerCase())
+      )
+    : [];
 
   return (
     <>
@@ -631,23 +667,42 @@ const App: React.FC = () => {
         onSave={handleSaveSection}
         onDelete={handleDeleteSection}
       />
-      <div className="flex h-screen bg-base-200 font-sans overflow-hidden">
-        <div className="flex-grow flex flex-col h-full relative">
+      <div className={`flex h-screen bg-base-200 font-sans overflow-hidden transition-all duration-300`}>
+        <ProjectsDrawer
+          isOpen={isProjectsDrawerOpen}
+          onClose={() => setIsProjectsDrawerOpen(false)}
+          projects={filteredProjects}
+          elements={filteredElements}
+          selectedProject={selectedProject}
+          onSelectProject={setSelectedProject}
+          onBackToProjects={() => setSelectedProject(null)}
+          onSearch={setProjectSearchTerm}
+          onAddProject={() => { /* TODO */ }}
+          onEditProject={() => { /* TODO */ }}
+          onDeleteProject={() => { /* TODO */ }}
+          onElementClick={handleElementClick}
+        />
+        <div className={`flex-grow flex flex-col h-full relative transition-all duration-300 ${isProjectsDrawerOpen ? 'ml-80' : 'ml-0'}`}>
             {!isFirebaseConfigured && (
                 <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 text-sm" role="alert">
                     <p className="font-bold">Persistence is Disabled</p>
-                    <p>To save and manage custom sections, add your Firebase project credentials to the <code>config/firebase.ts</code> file.</p>
+                    <p>Database Server is down <code>Dtabase Error</code> file.</p>
                 </div>
             )}
           <header className="flex-shrink-0 bg-primary text-white shadow-md z-10">
-            <div className="w-full px-4 py-3 flex items-center justify-between">
+            <div className="w-full px-4 py-2 flex items-center justify-between">
               <div className="flex items-center">
-                  <ChatIcon className="w-8 h-8 mr-3" />
-                  <h1 className="text-xl font-bold">Structural Analysis AI</h1>
+                  <button onClick={() => setIsProjectsDrawerOpen(prev => !prev)} className="p-2 rounded-full hover:bg-black/20 transition-colors mr-2" title="Toggle Projects">
+                    <FolderIcon className="w-6 h-6" />
+                  </button>
+                  <h1 className="text-xl font-bold">RosarcLABs</h1>
               </div>
-              <button onClick={() => setIsCanvasOpen(prev => !prev)} className="p-2 rounded-full hover:bg-black/20 transition-colors" title={isCanvasOpen ? "Close Canvas" : "Open Canvas"}>
-                  {isCanvasOpen ? <PanelLeftCloseIcon className="w-6 h-6" /> : <PanelRightOpenIcon className="w-6 h-6" />}
-              </button>
+              <div className="flex items-center gap-4">
+                <SignIn user={user} onAuthStateChange={setUser} />
+                <button onClick={() => setIsCanvasOpen(prev => !prev)} className="p-2 rounded-full hover:bg-black/20 transition-colors" title={isCanvasOpen ? "Close Canvas" : "Open Canvas"}>
+                    {isCanvasOpen ? <PanelLeftCloseIcon className="w-6 h-6" /> : <PanelRightOpenIcon className="w-6 h-6" />}
+                </button>
+              </div>
             </div>
           </header>
           
@@ -668,6 +723,7 @@ const App: React.FC = () => {
             handleElementFormCancel={handleElementFormCancel}
             handleElementFormSave={handleElementFormSave}
             sections={sections}
+            user={user}
           />
         </div>
         
