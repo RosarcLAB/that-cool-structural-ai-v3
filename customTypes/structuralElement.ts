@@ -496,6 +496,8 @@ export interface DesignParameters {
   codeParameters?: { [key: string]: any; };
 }
 
+import type { StatusMessage } from './types';
+
 export interface Element {
     // Basic element identification
     id?: string; // Optional - Firestore will generate this on creation
@@ -552,6 +554,8 @@ export interface Element {
     
     // Design results
     designResults?: DesignOutput[];
+  // New optional status message attached to the element (for UI feedback & audit)
+  statusMessage?: StatusMessage;
     
     // Persistence tracking
     isSaved?: boolean; // True if element has been saved to Firestore

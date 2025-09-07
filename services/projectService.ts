@@ -331,6 +331,22 @@ class ProjectService {
   }
 
   /**
+   * Upsert element: create new element if no id, otherwise update existing element.
+   * Returns the element id (new or existing).
+   */
+  async upsertElement(projectId: string, element: Element): Promise<string> {
+    if (!projectId) throw new Error('projectId is required to save element');
+    // If element has an id assume update
+    if (element.id) {
+      await this.updateElement(projectId, element.id, element);
+      return element.id;
+    }
+    // Otherwise create
+    const newId = await this.saveElement(projectId, element);
+    return newId;
+  }
+
+  /**
    * Get a specific element from project's elements subcollection
    */
   async getElement(projectId: string, elementId: string): Promise<Element | null> {

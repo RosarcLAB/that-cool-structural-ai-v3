@@ -1,5 +1,5 @@
 // types.ts: Defines the core data structures and type definitions for the application.
-import { BeamInput, BeamOutput, Element } from './structuralElement';
+import type { BeamInput, BeamOutput, Element } from './structuralElement';
 import type { Timestamp, FieldValue } from 'firebase/firestore';
 
 // Defines the sender of a chat message.
@@ -253,4 +253,5 @@ export interface StatusMessage {
     type: 'loading' | 'success' | 'error' | 'info';
     message: string;
     timestamp?: string;
+    user?: User; // optional actor who triggered this status
 }

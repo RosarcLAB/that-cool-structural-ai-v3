@@ -42,51 +42,10 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
      const [isSaved, setIsSaved] = useState<boolean>(elementData.isSaved || false);
     const elementNames = elementDataList ? elementDataList.map(el => el.name) : [];
 
-    /**
-     * Recomputes all load combinations for a given structural element.
-     * @param currentElement The structural element to recompute load combinations for.
-     * @returns The updated structural element with recomputed load combinations.
-     */
-    const recomputeAllLoadCombinations = (currentElement: Element): Element => {
-        const utils = new LoadCombinationUtils();
-        if (!currentElement.loadCombinations || !currentElement.appliedLoads) {
-            return currentElement;
-        }
-        const updatedCombinations = currentElement.loadCombinations.map(combo => {
-            // Only compute if it's not a 'Reaction' type, or handle as needed
-            if (combo.combinationType !== 'Reaction') {
-                const computedResult = utils.computeLoadCombination(currentElement.appliedLoads || [], combo);
-                return { ...combo, computedResult };
-            }
-            return combo; // Return reaction combos unchanged
-        });
-        return { ...currentElement, loadCombinations: updatedCombinations };
-    };
+    
 
 
-   /** Utility function to format magnitude values with appropriate units
-    * @param magnitude The magnitude value(s) to format.
-    * @param loadType The type of load being represented (e.g., PointLoad, TrapezoidalLoad).
-    * @returns The formatted magnitude string with units.
-   */
-    const formatMagnitudeWithUnit = (magnitude: number | number[], loadType: LoadType | string): string => {
-        const magnitudeInKN = Array.isArray(magnitude) ? magnitude.map(m => m / 1000) : magnitude / 1000;
-        if (Array.isArray(magnitudeInKN)) {
-            if (loadType === LoadType.PointLoad) {
-                return `${magnitudeInKN[0]?.toFixed(2) || '0.00'} kN`;
-            } else if (loadType === LoadType.TrapezoidalLoad && magnitudeInKN.length > 1) {
-                return `${magnitudeInKN[0]?.toFixed(2) || '0.00'}/${magnitudeInKN[1]?.toFixed(2) || '0.00'} kN/m`;
-            } else {
-                return `${magnitudeInKN[0]?.toFixed(2) || '0.00'} kN/m`;
-            }
-        } else {
-            if (loadType === LoadType.PointLoad) {
-                return `${magnitudeInKN?.toFixed(2) || '0.00'} kN`;
-            } else {
-                return `${magnitudeInKN?.toFixed(2) || '0.00'} kN/m`;
-            }
-        }
-    };
+   
 
     
 
@@ -262,6 +221,8 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     //#region Load Handlers
      /**
      * Handles changes to individual applied load properties.
+     * @param loadIndex - The index of the load being changed.
+     * @param newType - The new type of the load.
      */
     const handleLoadTypeChange = (loadIndex: number, newType: LoadType) => {
         setElement(prev => {
@@ -289,7 +250,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             });
             
             newAppliedLoads[loadIndex] = currentLoad;
-            return { ...prev, appliedLoads: newAppliedLoads };
+            const updated = { ...prev, appliedLoads: newAppliedLoads };
+            const updatedElement = recomputeAllLoadCombinations(updated);
+            return updatedElement;
         });
     };
 
@@ -444,7 +407,60 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             return { ...prev, loadCombinations: newCombinations };
         });
     };
+
+    /**
+     * Recomputes all load combinations for a given structural element.
+     * @param currentElement The structural element to recompute load combinations for.
+     * @returns The updated structural element with recomputed load combinations.
+     */
+    const recomputeAllLoadCombinations = (currentElement: Element): Element => {
+        const utils = new LoadCombinationUtils();
+        if (!currentElement.loadCombinations || !currentElement.appliedLoads) {
+            return currentElement;
+        }
+        const updatedCombinations = currentElement.loadCombinations.map(combo => ({
+            ...combo, 
+            computedResult: (() => {
+                if (!combo.loadCaseFactors || combo.loadCaseFactors.length === 0) {
+                    return undefined;
+                }
+                try {
+                    return utils.computeLoadCombination(currentElement.appliedLoads, combo);
+                } catch (error) {
+                    console.warn('Error computing load combination:', error);
+                    return undefined;
+                }
+            })()
+        }));
+        return { ...currentElement, loadCombinations: updatedCombinations };
+    };
     //#endregion
+
+    //#region Validation & Helper function 
+
+    /** Utility function to format magnitude values with appropriate units
+    * @param magnitude The magnitude value(s) to format.
+    * @param loadType The type of load being represented (e.g., PointLoad, TrapezoidalLoad).
+    * @returns The formatted magnitude string with units.
+    */
+    const formatMagnitudeWithUnit = (magnitude: number | number[], loadType: LoadType | string): string => {
+        const magnitudeInKN = Array.isArray(magnitude) ? magnitude.map(m => m / 1000) : magnitude / 1000;
+        if (Array.isArray(magnitudeInKN)) {
+            if (loadType === LoadType.PointLoad) {
+                return `${magnitudeInKN[0]?.toFixed(2) || '0.00'} kN`;
+            } else if (loadType === LoadType.TrapezoidalLoad && magnitudeInKN.length > 1) {
+                return `${magnitudeInKN[0]?.toFixed(2) || '0.00'}/${magnitudeInKN[1]?.toFixed(2) || '0.00'} kN/m`;
+            } else {
+                return `${magnitudeInKN[0]?.toFixed(2) || '0.00'} kN/m`;
+            }
+        } else {
+            if (loadType === LoadType.PointLoad) {
+                return `${magnitudeInKN?.toFixed(2) || '0.00'} kN`;
+            } else {
+                return `${magnitudeInKN?.toFixed(2) || '0.00'} kN/m`;
+            }
+        }
+    };
 
     // Helper: Validation for support/load positions
     const isSupportPositionInvalid = (pos: number) => pos > element.span;
@@ -477,6 +493,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         })
         : null;
 
+
     // FIX: Explicitly type the summary items array to prevent incorrect type inference.
     // TypeScript was inferring the `value` property as `LoadCombination[]`, which caused a type error
     // when trying to add a summary item with a `string[]` value for the governing result.
@@ -489,8 +506,8 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         maxArrayItems?: number;
     }[] = [
         { label: 'Count', value: element.loadCombinations || [], arrayDisplayType: 'count' as const },
-        { label: 'Types', value: element.loadCombinations || [], arrayDisplayType: 'list' as const, arrayProperty: 'combinationType', maxArrayItems: 2 },
-        { label: 'Names', value: element.loadCombinations?.filter(c => c.name && c.name.trim() !== '') || [], arrayDisplayType: 'list' as const, arrayProperty: 'name', maxArrayItems: 2 }
+        { label: 'Types', value: element.loadCombinations || [], arrayDisplayType: 'list' as const, arrayProperty: 'combinationType', maxArrayItems: 5 },
+        { label: 'Names', value: element.loadCombinations?.filter(c => c.name && c.name.trim() !== '') || [], arrayDisplayType: 'list' as const, arrayProperty: 'name', maxArrayItems: 5 }
     ];
 
     if (governingResult) {
@@ -510,7 +527,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             </div>
         );
     }
+    //#endregion
 
+    //#region Render Main Form
     return (
         <div className="space-y-4 border p-4 rounded-xl shadow-sm bg-base-100">
             <h3 className="text-lg font-bold text-center text-neutral">{element.name}</h3>
@@ -1129,7 +1148,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 summaryItems={[
                 {label: "Count", value: element.supports.length},
                 {label: "Types", value: element.supports, arrayDisplayType: 'list', arrayProperty: 'fixity', maxArrayItems: 3},
-                {label: 'Positions', value: element.supports, arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 2, unit: 'm' }
+                {label: 'Positions', value: element.supports, arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 3, unit: 'm' }
 
             ]}>
                 {element.supports.map((support, index) => (
@@ -1158,7 +1177,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             </FormCollapsibleSectionWithStagedSummary>
 
             {/* Applied Loads Section */}
-            <FormCollapsibleSectionWithStagedSummary title="Applied Loads" color="bg-teal-50/50" enableDoubleClickExpand={true} defaultStage="open"
+            <FormCollapsibleSectionWithStagedSummary title="Applied Loads" color="bg-teal-50/50" enableDoubleClickExpand={true} defaultStage="preview"
                 summaryItems={[
                     { label: 'Count', value: element.appliedLoads, arrayDisplayType: 'count' },
                     { label: 'Types', value: element.appliedLoads, arrayDisplayType: 'list', arrayProperty: 'type', maxArrayItems: 3 },
@@ -1282,7 +1301,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             {/* Load Combinations Section */}
             <FormCollapsibleSectionWithStagedSummary
                 title="Load Combinations"
-                defaultStage="open"
+                defaultStage="preview"
                 enableDoubleClickExpand={true}  
                 color="bg-violet-50/50"
                 summaryItems={loadCombinationsSummaryItems}
@@ -1516,6 +1535,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             `}</style>
         </div>
     );
+    //#endregion  
 };
 
 export default StructuralElementForm;

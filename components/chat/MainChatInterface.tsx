@@ -87,13 +87,23 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
     sections, user, projects
 }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    // Track previous messages length so we only auto-scroll when a new message is appended.
+    const prevMessagesLengthRef = useRef<number>(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isListening, setIsListening] = useState(false);
     const recognitionRef = useRef<SpeechRecognition | null>(null);
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const isSpeechSupported = !!SpeechRecognitionAPI;
 
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
+    useEffect(() => {
+        const prevLength = prevMessagesLengthRef.current;
+        const currLength = messages.length;
+        // Only scroll when a new message is appended (length increased).
+        if (currLength > prevLength) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+        prevMessagesLengthRef.current = currLength;
+    }, [messages]);
 
     const handleToggleListening = () => {
         if (!isSpeechSupported) { console.error("Speech recognition not supported."); return; }

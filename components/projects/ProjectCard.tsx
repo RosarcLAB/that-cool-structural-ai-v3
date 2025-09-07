@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { Project } from '../../customTypes/types';
 
 // SVG Icon Components
@@ -57,65 +57,31 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   onShare,
   isDefault = false,
 }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const handleMenuToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsMenuOpen(prev => !prev);
-  };
-
-  const handleMenuClose = () => {
-    setIsMenuOpen(false);
-  };
-
-  // Effect to close menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        handleMenuClose();
-      }
-    };
-
-    if (isMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    } else {
-      document.removeEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isMenuOpen]);
+  // Action bar (anchored bottom) — no dropdown state required
 
   const handleSetDefault = (e: React.MouseEvent) => {
     e.stopPropagation();
     onSetDefault(project.id);
-    handleMenuClose();
   };
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     onEdit(project);
-    handleMenuClose();
   };
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
     onSave(project);
-    handleMenuClose();
   };
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     onDelete(project.id);
-    handleMenuClose();
   };
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
     onShare(project.id);
-    handleMenuClose();
   };
 
   const handleCardClick = () => {
@@ -124,7 +90,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
 
   return (
     <div
-      className={`card card-compact bg-base-100 shadow-md hover:shadow-lg transition-shadow border ${isSelected ? 'border-primary' : 'border-base-300'} cursor-pointer p-4 rounded-lg`}
+      className={`card card-compact bg-base-100 shadow-md hover:shadow-lg transition-shadow border ${isSelected ? 'border-primary' : 'border-base-300'} cursor-pointer p-4 rounded-lg relative pb-12`}
       onClick={handleCardClick}
     >
       <div className="flex justify-between items-start">
@@ -137,44 +103,25 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           <p className="text-xs text-base-content/50">{project.elementCount} elements</p>
         </div>
         
-        <div className="dropdown dropdown-end flex-shrink-0" ref={dropdownRef}>
-          <button onClick={handleMenuToggle} className="btn btn-ghost btn-xs btn-circle">
-            <MoreVertIcon className="w-5 h-5" />
-          </button>
-          {isMenuOpen && (
-            <ul tabIndex={0} className="dropdown-content menu p-2 shadow-lg bg-base-100 rounded-lg w-56 z-10">
-              <li>
-                <a onClick={handleSetDefault} className="flex items-center gap-3 py-2">
-                  <BookmarkIcon className={`w-5 h-5 ${isDefault ? 'text-primary' : ''}`} />
-                  <span>{isDefault ? 'Default Project' : 'Set as Default'}</span>
-                </a>
-              </li>
-              <li>
-                <a onClick={handleEdit} className="flex items-center gap-3 py-2">
-                  <EditIcon className="w-5 h-5" />
-                  <span>Edit Project</span>
-                </a>
-              </li>
-              <li>
-                <a onClick={handleSave} className="flex items-center gap-3 py-2">
-                  <SaveIcon className="w-5 h-5" />
-                  <span>Save</span>
-                </a>
-              </li>
-              <li>
-                <a onClick={handleDelete} className="flex items-center gap-3 py-2">
-                  <DeleteIcon className="w-5 h-5" />
-                  <span>Delete</span>
-                </a>
-              </li>
-              <li>
-                <a onClick={handleShare} className="flex items-center gap-3 py-2">
-                  <ShareIcon className="w-5 h-5" />
-                  <span>Share</span>
-                </a>
-              </li>
-            </ul>
-          )}
+        {/* Anchored bottom icon action bar (Option B) */}
+        <div className="absolute left-0 right-0 bottom-0 px-3 pb-3 flex justify-center pointer-events-none">
+          <div className="w-full max-w-md flex gap-2 overflow-x-auto justify-center bg-base-200/60 rounded-md px-2 py-1 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
+            <button title={isDefault ? 'Default Project' : 'Set as Default'} onClick={handleSetDefault} className={`btn btn-ghost btn-xs btn-circle ${isDefault ? 'text-primary' : ''}`} aria-label="set-default">
+              <BookmarkIcon className="w-4 h-4" />
+            </button>
+            <button title="Edit Project" onClick={handleEdit} className="btn btn-ghost btn-xs btn-circle" aria-label="edit">
+              <EditIcon className="w-4 h-4" />
+            </button>
+            <button title="Save" onClick={handleSave} className="btn btn-ghost btn-xs btn-circle" aria-label="save">
+              <SaveIcon className="w-4 h-4" />
+            </button>
+            <button title="Delete" onClick={handleDelete} className="btn btn-ghost btn-xs btn-circle" aria-label="delete">
+              <DeleteIcon className="w-4 h-4" />
+            </button>
+            <button title="Share" onClick={handleShare} className="btn btn-ghost btn-xs btn-circle" aria-label="share">
+              <ShareIcon className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

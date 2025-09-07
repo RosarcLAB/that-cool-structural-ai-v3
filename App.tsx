@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChatMessage, Action, FilePayload, CanvasItem, StandardLoads, CanvasBeamInputItem, ConfirmAttachmentAnalysisAction, StatusMessage, Project } from './customTypes/types';
-import { BeamInput, Element as StructuralElement, SupportFixityType, LoadType, LoadCaseType } from './customTypes/structuralElement';
+import { BeamInput, Element as StructuralElement, SupportFixityType, LoadType, LoadCaseType, LoadCombinationUtils } from './customTypes/structuralElement';
 import { MaterialType, SectionProperties } from './customTypes/SectionProperties';
 import { getAiDecision } from './services/geminiService';
 import { analyzeBeam, designAllCombinations } from './services/analysisService';
@@ -231,81 +231,178 @@ const App: React.FC = () => {
       );
   }, []);
   
+  /**
+   * Handles the submission of the structural element form.
+   * @param data - The structural element data.
+   * @param messageId - The ID of the message being updated.
+   * @param formIndex - The index of the form being submitted.
+   */
   const handleElementFormSubmit = useCallback(async (data: StructuralElement, messageId: string, formIndex: number) => {
-      // Set loading status for this specific message
-      setMessages(prev =>
-        prev.map(msg =>
-          msg.id === messageId
-            ? { ...msg, statusMessage: { type: 'loading', message: `Designing "${data.name}"...` } }
-            : msg
-        )
-      );
+    // Create a local elementData copy
+    let elementData: StructuralElement = { ...data };
 
-      try {
-        const results = await designAllCombinations(data);
-        setMessages(prev =>
-          prev.map(msg => {
-            if (msg.id === messageId && msg.elementData) {
-              const newElementData = [...msg.elementData];
-              newElementData[formIndex] = { ...newElementData[formIndex], designResults: results };
-              return { ...msg, elementData: newElementData, statusMessage: { type: 'success', message: `Design complete for "${data.name}".`, timestamp: new Date().toLocaleTimeString() } };
-            }
-            return msg;
-          })
-        );
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === messageId
-              ? { ...msg, statusMessage: { type: 'error', message: `Design Failed: ${errorMessage}`, timestamp: new Date().toLocaleTimeString() } }
-              : msg
-          )
-        );
+    // Clear element status locally and show loading state in the message
+    elementData.statusMessage = undefined;
+    setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'loading', message: `Preparing design for "${elementData.name}"...`, timestamp: new Date().toLocaleTimeString() } } : msg));
+
+    try {
+      // 1) Validate at least one load combination exists (we can still rely on reaction generator to add missing reaction combos later)
+      if (!elementData.loadCombinations || elementData.loadCombinations.length === 0) {
+        const errMsg = `Cannot design "${elementData.name}": no load combinations found.`;
+        setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'error', message: errMsg, timestamp: new Date().toLocaleTimeString() } } : msg));
+        return;
       }
-  }, []);
+
+      // 2) Ensure individual reaction load combinations exist (idempotent)
+      const comboUtils = new LoadCombinationUtils();
+      elementData = comboUtils.reactionLoadCombinations(elementData, { forceRegenerate: false, includeInactive: false, customFactors: {} });
+
+      // Update message status: starting design
+      setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'loading', message: `Designing "${elementData.name}" (${elementData.loadCombinations?.length || 0} combos)...`, timestamp: new Date().toLocaleTimeString() } } : msg));
+
+      // 3) Call design API for all combinations
+      const designResults = await designAllCombinations(elementData);
+
+      // 4) Attach results and metadata
+      // Build a minimal StatusMessage.user object and cast through unknown to satisfy our app User type
+      const statusUser = user ? ({
+        id: (user as any).uid || '',
+        firstName: (user as any).displayName ? String((user as any).displayName).split(' ')[0] : '',
+        lastName: (user as any).displayName ? String((user as any).displayName).split(' ').slice(1).join(' ') : '',
+        email: (user as any).email || '',
+        displayName: (user as any).displayName || '',
+        country: '',
+        discipline: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isActive: true,
+        role: ''
+      } as unknown as any) : undefined;
+
+      const updatedElement: StructuralElement = {
+        ...elementData,
+        designResults,
+        isSaved: false,
+        updatedAt: new Date(),
+        version: (elementData.version || 0) + 1,
+        statusMessage: { type: 'success', message: `Design complete for "${elementData.name}". ${designResults.length} result(s).`, timestamp: new Date().toLocaleTimeString(), user: statusUser }
+      };
+
+      // 5) Update element inside projects state if present
+      if (updatedElement.projectId) {
+        setProjects(prev => prev.map(p => {
+          if (p.id === updatedElement.projectId) {
+            const existingIndex = (p.elements || []).findIndex(el => el.id === updatedElement.id);
+            if (existingIndex > -1) {
+              const newEls = [...(p.elements || [])];
+              newEls[existingIndex] = updatedElement;
+              return { ...p, elements: newEls };
+            }
+            // If not found, append
+            return { ...p, elements: [...(p.elements || []), updatedElement] };
+          }
+          return p;
+        }));
+      }
+
+      // 6) Update the original chat message with the updated element and success status
+      setMessages(prev => prev.map(msg => {
+          if (msg.id === messageId && msg.elementData) {
+            const newElementData = [...msg.elementData];
+            newElementData[formIndex] = updatedElement;
+            return { ...msg, elementData: newElementData, statusMessage: { type: 'success', message: `Design complete for "${updatedElement.name}".`, timestamp: new Date().toLocaleTimeString() } };
+          }
+          return msg;
+        }));
+
+        // Optionally clear status after a short delay
+        setTimeout(() => setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: undefined } : msg)), 5000);
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Analysis and design failed:', error);
+        setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'error', message: `Design Failed: ${errorMessage}`, timestamp: new Date().toLocaleTimeString() } } : msg));
+      }
+  
+    }, [user, setProjects, setMessages]);
 
   const handleElementFormCancel = useCallback((messageId: string, formIndex: number) => {
       deactivateFormInMessage(messageId, formIndex);
   }, [deactivateFormInMessage]);
 
   const handleElementFormSave = useCallback(async (data: StructuralElement, messageId?: string) => {
-      // If messageId is provided, update that specific message's status
-      if (messageId) {
-        setMessages(prev =>
-          prev.map(msg =>
-            msg.id === messageId
-              ? { ...msg, statusMessage: { type: 'loading', message: `Saving "${data.name}"...` } }
-              : msg
-          )
-        );
+      if (!data) return;
+
+      // 1) recompute combos locally to ensure server receives freshest computed results
+      const comboUtils = new LoadCombinationUtils();
+      let elementToSave: StructuralElement = { ...data };
+
+      // Ensure reaction combos exist (idempotent) and compute results for every combo
+      try {
+        elementToSave = comboUtils.reactionLoadCombinations ? comboUtils.reactionLoadCombinations(elementToSave as any, { forceRegenerate: false, includeInactive: false, customFactors: {} }) as any : elementToSave;
+        // compute results for each combination
+        if (elementToSave.loadCombinations && elementToSave.appliedLoads) {
+          elementToSave.loadCombinations = elementToSave.loadCombinations.map(c => {
+            try {
+              const computed = comboUtils.computeLoadCombination(elementToSave.appliedLoads || [], c) || [];
+              return { ...c, computedResult: computed };
+            } catch (err) {
+              console.warn('computeLoadCombination failed during save', err);
+              return { ...c };
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to ensure reaction combos before save', err);
       }
 
-      // In a real app, you would call a service to save to a database (e.g., Firestore)
-      // For this example, we'll simulate a save and update the state.
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
+      // 2) optimistic UI: mark as saving in message and disable save button via statusMessage
+      if (messageId) {
+        setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'loading', message: `Saving "${elementToSave.name}"...`, timestamp: new Date().toLocaleTimeString() } } : msg));
+      }
 
-      setMessages(prev =>
-          prev.map(msg => {
-              if (msg.elementData?.some(el => el.name === data.name)) {
-                  const updatedMsg = {
-                      ...msg,
-                      elementData: msg.elementData.map(el =>
-                          el.name === data.name ? { ...el, isSaved: true } : el
-                      ),
-                  };
+      try {
+        // 3) require projectId for saving; if missing, fail-fast and surface message
+        const projectId = elementToSave.projectId;
+        if (!projectId) throw new Error('Please select a Project before saving.');
 
-                  // If this is the message that contains the element, update its status
-                  if (messageId && msg.id === messageId) {
-                    updatedMsg.statusMessage = { type: 'success', message: `Successfully saved "${data.name}".`, timestamp: new Date().toLocaleTimeString() };
-                  }
+        // 4) call service upsert
+        const savedId = await projectService.upsertElement(projectId, elementToSave);
 
-                  return updatedMsg;
-              }
-              return msg;
-          })
-      );
-  }, []);
+        // 5) Update local projects state: replace or append element with server id
+        setProjects(prev => prev.map(p => {
+          if (p.id !== projectId) return p;
+          const existingIndex = (p.elements || []).findIndex(el => el.id === savedId || el.name === elementToSave.name);
+          const savedElement = { ...elementToSave, id: savedId, isSaved: true, updatedAt: new Date() } as StructuralElement;
+          if (existingIndex > -1) {
+            const newEls = [...(p.elements || [])];
+            newEls[existingIndex] = savedElement;
+            return { ...p, elements: newEls };
+          }
+          return { ...p, elements: [...(p.elements || []), savedElement] };
+        }));
+
+        // 6) Update messages with success and set isSaved
+        setMessages(prev => prev.map(msg => {
+          if (!msg.elementData) return msg;
+          const newElementData = msg.elementData.map(el => el.name === elementToSave.name ? { ...el, id: savedId, isSaved: true, updatedAt: new Date() } : el);
+          if (messageId && msg.id === messageId) {
+            return { ...msg, elementData: newElementData, statusMessage: { type: 'success', message: `Saved "${elementToSave.name}".`, timestamp: new Date().toLocaleTimeString() } };
+          }
+          return { ...msg, elementData: newElementData };
+        }));
+
+        // clear status after delay
+        if (messageId) setTimeout(() => setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: undefined } : msg)), 3000);
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Save failed:', error);
+        if (messageId) {
+          setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'error', message: `Save failed: ${errorMessage}`, timestamp: new Date().toLocaleTimeString() } } : msg));
+        }
+      }
+  }, [setMessages, setProjects]);
   
   // --- StructuralSection Handlers ---
     const handleSaveSection = async (sectionData: SectionProperties, mode: FormMode): Promise<SectionProperties | null> => {
