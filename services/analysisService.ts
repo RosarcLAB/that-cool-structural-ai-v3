@@ -1,6 +1,6 @@
 // services/analysisService.ts: Calls a remote backend for beam analysis.
 
-import { type Load, type Support, type BeamInput,  type BeamOutput, LoadType, SupportFixityType , Element as StructuralElement, DesignOutput, LoadCombination} from '../customTypes/structuralElement'
+import { type Load, type Support, type BeamInput,  type BeamOutput, LoadType, SupportFixityType , Element as StructuralElement, DesignOutput, LoadCombination, AppliedLoads, LoadCaseType} from '../customTypes/structuralElement'
 const STRUCTURAL_SERVICES_URL = 'https://rosarcbim-structural-api-701061055216.europe-west2.run.app/';
  
 /**
@@ -362,17 +362,92 @@ export async function designStructuralElement(element: StructuralElement, combin
   // Add combination name to result for tracking
   return {
     ...data,
-    combinationName: combination.name || `Combination_${Date.now()}`
+    combinationName: combination.name || `Combination_${Date.now()}`,
+    combinationType: combination.combinationType || 'Ultimate',
+    loadCaseType: combination.combinationType === 'Reaction' 
+      ? combination.loadCaseFactors?.[0]?.loadCaseType 
+      : undefined
   } as DesignOutput;
 }
 
+// Phase 3: Map reactions from DesignOutput to Support.reaction as AppliedLoads
+function mapReactionsToSupports(
+  element: StructuralElement, 
+  designOutput: DesignOutput,
+  combination: LoadCombination
+): StructuralElement {
+  
+  // Only process if this is a Reaction combination type with loadCaseType
+  if (combination.combinationType !== 'Reaction' || !designOutput.loadCaseType) {
+    return element;
+  }
+  
+  const updatedElement = { ...element };
+  
+  // DesignOutput.reactions format: { "0": [Fx, Fy, Mz], "6": [Fx, Fy, Mz] }
+  Object.entries(designOutput.reactions).forEach(([positionStr, forces]) => {
+    const position = parseFloat(positionStr);
+    
+    // Find matching support by position
+    const supportIndex = updatedElement.supports.findIndex(
+      support => Math.abs(support.position - position) < 0.001
+    );
+    
+    if (supportIndex !== -1) {
+      const [fx, fy, mz] = forces;
+      
+      // Get or initialize existing reaction
+      const existingReaction = updatedElement.supports[supportIndex].reaction || {};
+      
+      // For each direction, add this loadCaseType's force to the AppliedLoads
+      ['Fx', 'Fy', 'Mz'].forEach((dir, idx) => {
+        const forceValue = forces[idx];
+        if (forceValue !== 0) {
+          const direction = dir as 'Fx' | 'Fy' | 'Mz';
+          
+          if (!existingReaction[direction]) {
+            // Create new AppliedLoads
+            existingReaction[direction] = {
+              type: LoadType.PointLoad,
+              position: [String(position)],
+              forces: [{
+                magnitude: [Math.abs(forceValue)],
+                loadCase: designOutput.loadCaseType
+              }],
+              description: `${direction} reactions`
+            };
+          } else {
+            // Add to existing forces array
+            existingReaction[direction]!.forces.push({
+              magnitude: [Math.abs(forceValue)],
+              loadCase: designOutput.loadCaseType
+            });
+          }
+        }
+      });
+      
+      // Update support reaction with consolidated AppliedLoads
+      updatedElement.supports[supportIndex] = {
+        ...updatedElement.supports[supportIndex],
+        reaction: existingReaction
+      };
+    }
+  });
+  
+  return updatedElement;
+}
+
 // Design all load combinations for an element
-export async function designAllCombinations(element: StructuralElement): Promise<DesignOutput[]> {
+export async function designAllCombinations(element: StructuralElement): Promise<{
+  results: DesignOutput[];
+  updatedElement: StructuralElement;
+}> {
   if (!element.loadCombinations || element.loadCombinations.length === 0) {
     throw new Error('No load combinations found for design');
   }
 
   const results: DesignOutput[] = [];
+  let updatedElement = { ...element }; // Track updated element
   
   // Import combination utils for computing results
   const { LoadCombinationUtils } = await import('../customTypes/structuralElement');
@@ -389,7 +464,7 @@ export async function designAllCombinations(element: StructuralElement): Promise
     // If no computed result exists, compute it now (this handles reaction combinations)
     if (!computedResult || computedResult.length === 0) {
       try {
-        computedResult = combinationUtils.computeLoadCombination(element.appliedLoads || [], combination);
+        computedResult = combinationUtils.computeLoadCombination(updatedElement.appliedLoads || [], combination);
       } catch (error) {
         console.warn(`Failed to compute results for combination ${combination.name}:`, error);
         continue; // Skip this combination if computation fails
@@ -401,7 +476,11 @@ export async function designAllCombinations(element: StructuralElement): Promise
       try {
         // Create a combination object with computed results for design
         const combinationWithResults = { ...combination, computedResult };
-        const result = await designStructuralElement(element, combinationWithResults);
+        const result = await designStructuralElement(updatedElement, combinationWithResults);
+        
+        // Phase 4: Map reactions back to element supports
+        updatedElement = mapReactionsToSupports(updatedElement, result, combinationWithResults);
+        
         results.push(result);
       } catch (error) {
         console.error(`Design failed for combination ${combination.name}:`, error);
@@ -412,7 +491,7 @@ export async function designAllCombinations(element: StructuralElement): Promise
     }
   }
   
-  return results;
+  return { results, updatedElement };
 }
 
 // Save element to database (placeholder - implement based on your backend)

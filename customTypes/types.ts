@@ -50,6 +50,11 @@ export type UpdateAction = {
     targetContext: 'chat' | 'canvas';
     targetBeamName: string;
     updatedProperties: Partial<BeamInput>;
+} | {
+    type: 'update_element_form';
+    targetContext: 'chat' | 'canvas';
+    targetElementName: string;
+    updatedProperties: Partial<Element>;
 };
 
 export type DownloadAction = {

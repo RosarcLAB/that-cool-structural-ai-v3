@@ -21,6 +21,34 @@ class ProjectService {
   private projectsCollection = collection(db, 'projects');
 
   /**
+   * Sanitize data for Firestore by removing undefined values
+   */
+  private sanitizeForFirestore(obj: any, path: string = ''): any {
+    if (obj === null || obj === undefined) {
+      return null;
+    }
+    
+    if (Array.isArray(obj)) {
+      return obj.map((item, index) => this.sanitizeForFirestore(item, `${path}[${index}]`));
+    }
+    
+    if (typeof obj === 'object' && obj.constructor === Object) {
+      const sanitized: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (value !== undefined) {
+          sanitized[key] = this.sanitizeForFirestore(value, path ? `${path}.${key}` : key);
+        } else {
+          // Log undefined values for debugging
+          console.warn(`Removed undefined value at path: ${path ? `${path}.${key}` : key}`);
+        }
+      }
+      return sanitized;
+    }
+    
+    return obj;
+  }
+
+  /**
    * Create a new project
    */
   async createProject(ownerId: string, projectName: string, projectData?: Partial<Project>): Promise<string> {
@@ -285,8 +313,11 @@ class ProjectService {
       version: 1
     };
 
+    // Sanitize data to remove undefined values before saving to Firestore
+    const sanitizedElementToSave = this.sanitizeForFirestore(elementToSave);
+
     // Add element to subcollection
-    const docRef = await addDoc(elementsRef, elementToSave);
+    const docRef = await addDoc(elementsRef, sanitizedElementToSave);
 
     // Update parent project document timestamp only (elementCount will be computed when loaded)
     await updateDoc(projectRef, {
@@ -319,8 +350,11 @@ class ProjectService {
       previousVersion: currentVersion
     };
 
+    // Sanitize data to remove undefined values before saving to Firestore
+    const sanitizedElementToUpdate = this.sanitizeForFirestore(elementToUpdate);
+
     // Update element in subcollection
-    await updateDoc(elementRef, elementToUpdate);
+    await updateDoc(elementRef, sanitizedElementToUpdate);
 
     // Update parent project document timestamp only (elementCount doesn't change for updates)
     await updateDoc(projectRef, {

@@ -261,7 +261,7 @@ const App: React.FC = () => {
       setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'loading', message: `Designing "${elementData.name}" (${elementData.loadCombinations?.length || 0} combos)...`, timestamp: new Date().toLocaleTimeString() } } : msg));
 
       // 3) Call design API for all combinations
-      const designResults = await designAllCombinations(elementData);
+      const { results: designResults, updatedElement: elementWithReactions } = await designAllCombinations(elementData);
 
       // 4) Attach results and metadata
       // Build a minimal StatusMessage.user object and cast through unknown to satisfy our app User type
@@ -280,12 +280,12 @@ const App: React.FC = () => {
       } as unknown as any) : undefined;
 
       const updatedElement: StructuralElement = {
-        ...elementData,
+        ...elementWithReactions, // Use element with populated support reactions
         designResults,
         isSaved: false,
         updatedAt: new Date(),
-        version: (elementData.version || 0) + 1,
-        statusMessage: { type: 'success', message: `Design complete for "${elementData.name}". ${designResults.length} result(s).`, timestamp: new Date().toLocaleTimeString(), user: statusUser }
+        version: (elementWithReactions.version || 0) + 1,
+        statusMessage: { type: 'success', message: `Design complete for "${elementWithReactions.name}". ${designResults.length} result(s).`, timestamp: new Date().toLocaleTimeString(), user: statusUser }
       };
 
       // 5) Update element inside projects state if present
@@ -459,12 +459,67 @@ const App: React.FC = () => {
       for (const action of actions) {
           switch (action.type) {
               case 'update_beam_form': {
-                  // This logic remains specific and might be better here than in the processor class
                   saveHistorySnapshot();
-                  setMessages(prevMessages => {
-                      // ... logic to find and update the correct beam form message
-                      return prevMessages; // placeholder
-                  });
+                  
+                  if (action.targetContext === 'canvas') {
+                      // Update canvas items
+                      setCanvasItems(prevItems => {
+                          return prevItems.map(item => {
+                              if (item.type === 'beam_input' && (item as any).data?.Name === action.targetBeamName) {
+                                  return { ...item, data: { ...(item as any).data, ...action.updatedProperties } };
+                              }
+                              return item;
+                          });
+                      });
+                  } else {
+                      // Update chat messages
+                      setMessages(prevMessages => {
+                          return prevMessages.map(msg => {
+                              if (msg.type === 'beam_input_form' && msg.beamInputsData) {
+                                  const updatedBeamData = msg.beamInputsData.map(beam => {
+                                      if (beam.Name === action.targetBeamName) {
+                                          return { ...beam, ...action.updatedProperties };
+                                      }
+                                      return beam;
+                                  });
+                                  return { ...msg, beamInputsData: updatedBeamData };
+                              }
+                              return msg;
+                          });
+                      });
+                  }
+                  break;
+              }
+              case 'update_element_form': {
+                  saveHistorySnapshot();
+                  
+                  if (action.targetContext === 'canvas') {
+                      // Update canvas items
+                      setCanvasItems(prevItems => {
+                          return prevItems.map(item => {
+                              if (item.type === 'element' && (item as any).data?.name === action.targetElementName) {
+                                  return { ...item, data: { ...(item as any).data, ...action.updatedProperties } };
+                              }
+                              return item;
+                          });
+                      });
+                  } else {
+                      // Update chat messages
+                      setMessages(prevMessages => {
+                          return prevMessages.map(msg => {
+                              if (msg.type === 'element_form' && msg.elementData) {
+                                  const updatedElementData = msg.elementData.map(element => {
+                                      if (element.name === action.targetElementName) {
+                                          return { ...element, ...action.updatedProperties };
+                                      }
+                                      return element;
+                                  });
+                                  return { ...msg, elementData: updatedElementData };
+                              }
+                              return msg;
+                          });
+                      });
+                  }
                   break;
               }
               case 'download_analysis': {
@@ -650,6 +705,26 @@ const App: React.FC = () => {
         }
     };
 
+  const getElementsFromContext = (context: AppContext, selectedItemId: string | null): StructuralElement[] => {
+        if (context === 'canvas') {
+            if (!selectedItemId) return [];
+            const selectedItem = canvasItems.find(item => item.id === selectedItemId && item.type === 'element');
+            return selectedItem ? [(selectedItem as any).data] : [];
+        } else { // context === 'chat' or 'attachm.'
+            const chatElements: StructuralElement[] = [];
+            messages.forEach(msg => {
+                if (msg.type === 'element_form' && msg.elementData) {
+                    msg.elementData.forEach(element => {
+                        const existingIndex = chatElements.findIndex(e => e.name === element.name);
+                        if (existingIndex !== -1) chatElements[existingIndex] = element;
+                        else chatElements.push(element);
+                    });
+                }
+            });
+            return chatElements;
+        }
+    };
+
   const handleSendMessage = async () => {
     if ((userInput.trim() === '' && !fileToUpload) || isLoading) return;
 
@@ -677,9 +752,18 @@ const App: React.FC = () => {
 
       const chatHistory = messages.map(m => ({ role: m.sender, parts: [{text: m.text}] }));
       const beamsInContext = getBeamInputsFromContext(context, selectedCanvasItemId);
+      const elementsInContext = getElementsFromContext(context, selectedCanvasItemId);
+      
       let promptWithContext = userMessageText;
+      
+      // Add beam context if available
       if (beamsInContext.length > 0) {
-          promptWithContext += `\n\n# Current Context State ('${context}')\n${JSON.stringify(beamsInContext, null, 2)}`;
+          promptWithContext += `\n\n# Current Beam Context ('${context}')\n${JSON.stringify(beamsInContext, null, 2)}`;
+      }
+      
+      // Add element context if available
+      if (elementsInContext.length > 0) {
+          promptWithContext += `\n\n# Current Element Context ('${context}')\n${JSON.stringify(elementsInContext, null, 2)}`;
       }
 
       const decision = await getAiDecision(promptWithContext, chatHistory, filePayload, context);
@@ -801,7 +885,7 @@ const App: React.FC = () => {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Canvas save failed:', error);
-      // Could add toast notification here for user feedback
+      throw error; // Re-throw to let Canvas component handle status message
     }
   }, [setProjects, setCanvasItems]);
 
@@ -809,8 +893,7 @@ const App: React.FC = () => {
     try {
       // Validate at least one load combination exists
       if (!element.loadCombinations || element.loadCombinations.length === 0) {
-        console.error(`Cannot design "${element.name}": no load combinations found.`);
-        return;
+        throw new Error(`Cannot design "${element.name}": no load combinations found.`);
       }
 
       // Ensure individual reaction load combinations exist
@@ -818,14 +901,14 @@ const App: React.FC = () => {
       let elementData = comboUtils.reactionLoadCombinations(element, { forceRegenerate: false, includeInactive: false, customFactors: {} });
 
       // Call design API for all combinations
-      const designResults = await designAllCombinations(elementData);
+      const { results: designResults, updatedElement: elementWithReactions } = await designAllCombinations(elementData);
 
       // Build updated element with results
       const updatedElement: StructuralElement = {
-        ...elementData,
+        ...elementWithReactions, // Use element with populated support reactions
         designResults,
         updatedAt: new Date(),
-        version: (elementData.version || 0) + 1,
+        version: (elementWithReactions.version || 0) + 1,
       };
 
       // Update element inside projects state if present
@@ -853,9 +936,13 @@ const App: React.FC = () => {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Canvas design failed:', error);
-      // Could add toast notification here for user feedback
+      throw error; // Re-throw to let Canvas component handle status message
     }
   }, [setProjects, setCanvasItems]);
+  const handleCanvasStatusUpdate = useCallback((itemId: string, status: StatusMessage | null) => {
+    // Optional: Could add global status handling here if needed
+    // For now, Canvas handles its own status display
+  }, []);
   
   const handleMouseDownOnResizer = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -962,6 +1049,7 @@ const App: React.FC = () => {
             onAnalyzeInCanvas={handleAnalyzeInCanvas}
             onElementSave={handleSaveInCanvas}
             onElementDesign={handleDesignInCanvas}
+            onStatusUpdate={handleCanvasStatusUpdate}
             sections={sections}
             projects={projects}
           />

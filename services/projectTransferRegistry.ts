@@ -77,7 +77,7 @@ class ProjectTransferRegistry {
     const support = sourceEl.supports?.[supportIndex];
     if (!support) throw new Error('Support not found');
 
-    const verticalN = (support.reaction?.Fx ?? 0);
+    const verticalN = (support.reaction?.Fy?.forces[0]?.magnitude[0] ?? 0);
     const groupId = uuidv4();
     const meta: TransferMeta = {
       transferGroupId: groupId,

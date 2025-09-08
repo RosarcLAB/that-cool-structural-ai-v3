@@ -48,6 +48,12 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const [newLoadSourceMode, setNewLoadSourceMode] = useState<'manual' | 'fromProjectReaction'>('manual');
     const [reactionSourceElementId, setReactionSourceElementId] = useState<string>('');
     const [reactionSourceSupportIndex, setReactionSourceSupportIndex] = useState<number | ''>('');
+    
+    // Helper to filter out reaction combinations from UI display  
+    const visibleLoadCombinations = element.loadCombinations?.filter(
+        combination => combination.combinationType !== 'Reaction'
+    ) || [];
+    
     // Candidate source elements: saved elements in the same project (exclude self)
     const [fetchedCandidateElements, setFetchedCandidateElements] = useState<any[]>([]);
     useEffect(() => {
@@ -564,9 +570,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         arrayProperty?: string;
         maxArrayItems?: number;
     }[] = [
-        { label: 'Count', value: element.loadCombinations || [], arrayDisplayType: 'count' as const },
-        { label: 'Types', value: element.loadCombinations || [], arrayDisplayType: 'list' as const, arrayProperty: 'combinationType', maxArrayItems: 5 },
-        { label: 'Names', value: element.loadCombinations?.filter(c => c.name && c.name.trim() !== '') || [], arrayDisplayType: 'list' as const, arrayProperty: 'name', maxArrayItems: 5 }
+        { label: 'Count', value: visibleLoadCombinations || [], arrayDisplayType: 'count' as const },
+        { label: 'Types', value: visibleLoadCombinations || [], arrayDisplayType: 'list' as const, arrayProperty: 'combinationType', maxArrayItems: 5 },
+        { label: 'Names', value: visibleLoadCombinations?.filter(c => c.name && c.name.trim() !== '') || [], arrayDisplayType: 'list' as const, arrayProperty: 'name', maxArrayItems: 5 }
     ];
 
     if (governingResult) {
@@ -1331,11 +1337,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                 </div>
                                 
                                 {/* Combination Results Display */}
-                                {element.loadCombinations && element.loadCombinations.length > 0 && (
+                                {visibleLoadCombinations && visibleLoadCombinations.length > 0 && (
                                     <div className="mt-3 p-2 bg-yellow-50/30 rounded border">
                                         <label className="text-sm font-semibold text-gray-800 mb-2 block">Combination Results for this Load</label>
                                         <div className="space-y-1">
-                                            {element.loadCombinations.map((combo, combIdx) => {
+                                            {visibleLoadCombinations.map((combo, combIdx) => {
                                                 const loadResult = combo.computedResult && combo.computedResult[loadIndex];
                                                 if (!loadResult || loadResult.magnitude.length === 0 || loadResult.magnitude.every(mag => mag === 0)) {
                                                     return null;
@@ -1406,8 +1412,8 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 summaryItems={loadCombinationsSummaryItems}
             >
                 <div className="space-y-2">
-                    {element.loadCombinations && element.loadCombinations.length > 0 ? (
-                        element.loadCombinations.map((combo, idx) => (
+                    {visibleLoadCombinations && visibleLoadCombinations.length > 0 ? (
+                        visibleLoadCombinations.map((combo, idx) => (
                             <FormCollapsibleSectionWithStagedSummary
                                 key={idx}
                                 title={combo.name || `Load Combination ${idx + 1}`}
@@ -1460,7 +1466,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="button"
                                             onClick={() => removeCombination(idx)}
                                             className="btn-icon text-red-500"
-                                            disabled={element.loadCombinations.length === 1}
+                                            disabled={visibleLoadCombinations.length === 0}
                                         >
                                             <RemoveIcon />
                                         </button>

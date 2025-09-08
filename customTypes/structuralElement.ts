@@ -74,9 +74,9 @@ export interface Support {
   position: number;
   fixity: SupportFixityType;
   reaction?: {
-    Fx?: number;
-    Fy?: number;
-    Mz?: number;
+    Fx?: AppliedLoads;
+    Fy?: AppliedLoads;
+    Mz?: AppliedLoads;
   };
 
 }
@@ -624,5 +624,5 @@ export interface DesignOutput {
   x_values: number[];
   combinationName?: string; // Added to track which combination this result belongs to
   combinationType?: 'Ultimate' | 'Serviceability' | 'Other' | 'Reaction';
-
+  loadCaseType?: LoadCaseType;
 }

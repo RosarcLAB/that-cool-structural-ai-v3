@@ -37,6 +37,7 @@ export async function getAiDecision(
         1.  **Form Selection:**
             *   For simple beam analysis requests (span, supports, basic loads), use the \`beamInputs\` schema.
             *   For more complex structural element design requests that involve load combinations, design parameters, or specific element types (like rafters, joists), you MUST use the \`ElementForms\` schema.
+            *   Always default to the \`ElementForms\` schema for any design-related queries and ask if uncertain.
 
         2.  **Element Creation (ElementForms):**
             *   When a user describes a new structural element for design, create an \`ElementForms\` object.
@@ -58,21 +59,29 @@ export async function getAiDecision(
 
         6.  **Form Manipulation:** To add or remove items from an active form, use the appropriate action: \`addSupport\`, \`removeSupport\`, \`addLoad\`, \`removeLoad\`, \`addLoadCombination\`, \`removeLoadCombination\`, \`addLoadCaseFactor\`, \`removeLoadCaseFactor\`. You must specify the \`targetIndex\` of the form in the message and the \`itemIndex\` or \`parentIndex\` where applicable.
 
-        7.  **Submitting Forms:**
+        7.  **Property Updates:** To modify existing form properties (like span, section, name), use the appropriate update action: \`update_beam_form\` for beam forms or \`update_element_form\` for element forms. Provide the exact \`targetBeamName\` or \`targetElementName\` and the \`updatedProperties\` object containing only the properties you want to change.
+
+        8.  **Submitting Forms:**
             *   To analyze/design a single form, use the \`submit\` action with its \`targetIndex\`.
             *   To analyze/design all active forms, use the \`submit_all\` action.
 
-        8.  **Drawing Analysis:**
+        9.  **Drawing Analysis:**
             *   If context is 'attachm.', analyze the drawing and create a separate \`BeamInput\` or \`ElementForms\` object for each distinct element found.
             *   If context is 'chat' or 'canvas', you MUST ask for confirmation using \`confirm_attachment_analysis\` and \`cancel_attachment_analysis\` actions. Your \`chat_response\` should ask the user to confirm.
 
-        9.  **General Chat:** For a general question, respond with \`chat_response\` and empty arrays for other keys.
+        10. **Context Awareness:**
+            *   When user messages contain "Current Beam Context" or "Current Element Context" sections, these show the ACTIVE forms the user is working with.
+            *   For 'canvas' context: The context shows the SELECTED canvas item. When users say "change span to 5m" without specifying an element name, use the selected element from context.
+            *   For 'chat' context: The context shows all active forms in the chat. If there's only one element/beam, assume user is referring to it. If multiple, ask for clarification.
+            *   Always use the exact element/beam names from the context when generating update actions.
+
+        11. **General Chat:** For a general question, respond with \`chat_response\` and empty arrays for other keys.
         
         **Schema Definitions:**
         *   \`chat_response\`: (string) Your conversational response.
         *   \`beamInputs\`: (Array of \`BeamInput\`) For creating NEW simple beams for analysis.
         *   \`ElementForms\`: (Array of \`Element\`) For creating NEW complex elements for design.
-        *   \`actions\`: (Array of actions). Types: \`submit\`, \`cancel\`, \`submit_all\`, \`update_beam_form\`, \`download_analysis\`, \`confirm_attachment_analysis\`, \`cancel_attachment_analysis\`, \`addSupport\`, \`removeSupport\`, \`addLoad\`, \`removeLoad\`, \`addLoadCombination\`, \`removeLoadCombination\`, \`addLoadCaseFactor\`, \`removeLoadCaseFactor\`.
+        *   \`actions\`: (Array of actions). Types: \`submit\`, \`cancel\`, \`submit_all\`, \`update_beam_form\`, \`update_element_form\`, \`download_analysis\`, \`confirm_attachment_analysis\`, \`cancel_attachment_analysis\`, \`addSupport\`, \`removeSupport\`, \`addLoad\`, \`removeLoad\`, \`addLoadCombination\`, \`removeLoadCombination\`, \`addLoadCaseFactor\`, \`removeLoadCaseFactor\`.
 
         ---
         **Example 1: Creating a simple beam**
@@ -109,6 +118,18 @@ export async function getAiDecision(
             }
           ]
         }
+        ---
+        **Example 3: Updating an existing element property**
+        User: "Change span to 2m for FB.01"
+        { "chat_response": "I've updated the span of FB.01 to 2 meters.", "actions": [{ "type": "update_element_form", "targetContext": "chat", "targetElementName": "FB.01", "updatedProperties": { "span": 2 } }] }
+        ---
+        **Example 4: Decision-making between BeamInputs vs ElementForms**
+        User: "What's the maximum moment in a 6m beam with 10kN load?" → BeamInputs (analysis request)
+        User: "Design a 6m floor beam for 10kPa live load" → ElementForms (design request with load combination implications)
+        ---
+        **Example 5: Using Canvas Context**
+        User: "Change span to 5m" with Current Element Context showing FB.01 → Use FB.01 as targetElementName
+        { "chat_response": "I've updated the span of FB.01 to 5 meters.", "actions": [{ "type": "update_element_form", "targetContext": "canvas", "targetElementName": "FB.01", "updatedProperties": { "span": 5 } }] }
     `;
     
     const userParts: ({ text: string } | { inlineData: { mimeType: string; data: string; } })[] = [];

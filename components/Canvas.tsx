@@ -1,7 +1,7 @@
 // components/Canvas.tsx: Renders the side panel for pinned items.
 
 import React, { useState } from 'react';
-import { CanvasItem, CanvasTextItem } from '../customTypes/types';
+import { CanvasItem, CanvasTextItem, StatusMessage } from '../customTypes/types';
 import type { Element as StructuralElement } from '../customTypes/structuralElement';
 import { BeamInput } from '../customTypes/structuralElement';
 import { CloseIcon } from './utility/icons';
@@ -20,6 +20,8 @@ interface CanvasProps {
     // New handlers for element actions inside the Canvas
     onElementSave?: (element: StructuralElement, itemId: string) => Promise<void>;
     onElementDesign?: (element: StructuralElement, itemId: string) => Promise<void>;
+    // Status message callbacks
+    onStatusUpdate?: (itemId: string, status: StatusMessage | null) => void;
     // Context data for StructuralElementForm
     sections?: any[];
     projects?: any[];
@@ -70,15 +72,89 @@ export const Canvas: React.FC<CanvasProps> = ({
     onAnalyzeInCanvas,
     onElementSave,
     onElementDesign,
+    onStatusUpdate,
     sections = [],
     projects = []
 }) => {
     const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+    const [elementStatusMessages, setElementStatusMessages] = useState<Record<string, StatusMessage | null>>({});
 
     const handleFormSubmit = async (data: BeamInput, itemId: string) => {
         setAnalyzingId(itemId);
         await onAnalyzeInCanvas(data);
         setAnalyzingId(null);
+    };
+
+    // Helper to update status message for a specific element
+    const updateElementStatus = (itemId: string, status: StatusMessage | null) => {
+        setElementStatusMessages(prev => ({ ...prev, [itemId]: status }));
+        if (onStatusUpdate) {
+            onStatusUpdate(itemId, status);
+        }
+    };
+
+    // Enhanced element save handler with status messages
+    const handleElementSave = async (data: StructuralElement, itemId: string) => {
+        updateElementStatus(itemId, { 
+            type: 'loading', 
+            message: `Saving "${data.name}"...`, 
+            timestamp: new Date().toLocaleTimeString() 
+        });
+
+        try {
+            if (typeof onElementSave === 'function') {
+                await onElementSave(data, itemId);
+            }
+            // Don't call onUpdateItem here - App.tsx handlers already update canvas items
+            
+            updateElementStatus(itemId, { 
+                type: 'success', 
+                message: `Saved "${data.name}".`, 
+                timestamp: new Date().toLocaleTimeString() 
+            });
+
+            // Clear status after delay
+            setTimeout(() => updateElementStatus(itemId, null), 3000);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            updateElementStatus(itemId, { 
+                type: 'error', 
+                message: `Save failed: ${errorMessage}`, 
+                timestamp: new Date().toLocaleTimeString() 
+            });
+        }
+    };
+
+    // Enhanced element design handler with status messages
+    const handleElementDesign = async (data: StructuralElement, itemId: string) => {
+        updateElementStatus(itemId, { 
+            type: 'loading', 
+            message: `Designing "${data.name}" (${data.loadCombinations?.length || 0} combos)...`, 
+            timestamp: new Date().toLocaleTimeString() 
+        });
+
+        try {
+            if (typeof onElementDesign === 'function') {
+                await onElementDesign(data, itemId);
+            }
+            // Don't call onUpdateItem here - App.tsx handlers already update canvas items with design results
+            
+            updateElementStatus(itemId, { 
+                type: 'success', 
+                message: `Design complete for "${data.name}".`, 
+                timestamp: new Date().toLocaleTimeString() 
+            });
+
+            // Clear status after delay
+            setTimeout(() => updateElementStatus(itemId, null), 5000);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            updateElementStatus(itemId, { 
+                type: 'error', 
+                message: `Design failed: ${errorMessage}`, 
+                timestamp: new Date().toLocaleTimeString() 
+            });
+        }
     };
     
     // Helper to get a short title for the chip.
@@ -168,17 +244,10 @@ export const Canvas: React.FC<CanvasProps> = ({
                                     <StructuralElementForm
                                         elementData={elementData}
                                         isFormActive={true}
-                                        onSubmit={(data) => {
-                                            // wire design/submit to parent handler if provided, otherwise just update the canvas item
-                                            if (typeof onElementDesign === 'function') onElementDesign(data, selectedItem.id).catch(() => {});
-                                            onUpdateItem({ ...selectedItem, data } as CanvasItem);
-                                        }}
+                                        onSubmit={(data) => handleElementDesign(data, selectedItem.id)}
                                         onCancel={() => onCloseItem(selectedItem.id)}
-                                        onSave={async (data) => {
-                                            if (typeof onElementSave === 'function') await onElementSave(data, selectedItem.id).catch(() => {});
-                                            onUpdateItem({ ...selectedItem, data } as CanvasItem);
-                                        }}
-                                        statusMessage={null}
+                                        onSave={(data) => handleElementSave(data, selectedItem.id)}
+                                        statusMessage={elementStatusMessages[selectedItem.id] || null}
                                         sections={sections}
                                         projectData={projects}
                                         elementDataList={elementDataList}
