@@ -700,8 +700,24 @@ const App: React.FC = () => {
         case 'text': case 'error': newItem = { id: crypto.randomUUID(), type: 'text', title: 'Note', content: msg.text }; break;
         case 'beam_input_form': if (msg.beamInputsData?.[index]) newItem = { id: crypto.randomUUID(), type: 'beam_input', data: msg.beamInputsData[index] }; break;
         case 'beam_output_display': if (msg.beamOutputData && msg.beamInputsData?.[0]) newItem = { id: crypto.randomUUID(), type: 'beam_output', inputData: msg.beamInputsData[0], outputData: msg.beamOutputData }; break;
+        case 'element_form': if (msg.elementData?.[index]) newItem = { id: crypto.randomUUID(), type: 'element', data: msg.elementData[index] }; break;
     }
-    if (newItem) { setCanvasItems(prev => [...prev, newItem as CanvasItem]); setSelectedCanvasItemId(newItem.id); setIsCanvasOpen(true); }
+    if (newItem) {
+      setCanvasItems(prev => [...prev, newItem as CanvasItem]);
+      setSelectedCanvasItemId(newItem.id);
+      setIsCanvasOpen(true);
+      // If the source message contained an active form, deactivate it so the form closes when pinned
+      if (msg.id && typeof formIndex === 'number') {
+        setMessages(prev => prev.map(m => {
+          if (m.id === msg.id && m.isFormActive) {
+            const newIsFormActive = [...m.isFormActive];
+            newIsFormActive[formIndex] = false;
+            return { ...m, isFormActive: newIsFormActive };
+          }
+          return m;
+        }));
+      }
+    }
   }, []);
 
   const handleRemoveCanvasItem = useCallback((id: string) => {
@@ -731,6 +747,115 @@ const App: React.FC = () => {
         setIsLoading(false);
     }
   }, [addMessage]);
+
+  // Canvas Element Handlers
+  const handleSaveInCanvas = useCallback(async (element: StructuralElement, itemId: string) => {
+    try {
+      // Reuse existing save logic with load combination computation
+      const comboUtils = new LoadCombinationUtils();
+      let elementToSave: StructuralElement = { ...element };
+
+      // Ensure reaction combos exist and compute results for every combo
+      try {
+        elementToSave = comboUtils.reactionLoadCombinations ? comboUtils.reactionLoadCombinations(elementToSave as any, { forceRegenerate: false, includeInactive: false, customFactors: {} }) as any : elementToSave;
+        if (elementToSave.loadCombinations && elementToSave.appliedLoads) {
+          elementToSave.loadCombinations = elementToSave.loadCombinations.map(c => {
+            try {
+              const computed = comboUtils.computeLoadCombination(elementToSave.appliedLoads || [], c) || [];
+              return { ...c, computedResult: computed };
+            } catch (err) {
+              console.warn('computeLoadCombination failed during canvas save', err);
+              return { ...c };
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to ensure reaction combos before canvas save', err);
+      }
+
+      // Require projectId for saving
+      const projectId = elementToSave.projectId;
+      if (!projectId) throw new Error('Please select a Project before saving.');
+
+      // Call service upsert
+      const savedId = await projectService.upsertElement(projectId, elementToSave);
+
+      // Update local projects state
+      setProjects(prev => prev.map(p => {
+        if (p.id !== projectId) return p;
+        const existingIndex = (p.elements || []).findIndex(el => el.id === savedId || el.name === elementToSave.name);
+        const savedElement = { ...elementToSave, id: savedId, isSaved: true, updatedAt: new Date() } as StructuralElement;
+        if (existingIndex > -1) {
+          const newEls = [...(p.elements || [])];
+          newEls[existingIndex] = savedElement;
+          return { ...p, elements: newEls };
+        }
+        return { ...p, elements: [...(p.elements || []), savedElement] };
+      }));
+
+      // Update the canvas item with saved element
+      setCanvasItems(prev => prev.map(item => 
+        item.id === itemId ? { ...item, data: { ...elementToSave, id: savedId, isSaved: true, updatedAt: new Date() } } as CanvasItem : item
+      ));
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Canvas save failed:', error);
+      // Could add toast notification here for user feedback
+    }
+  }, [setProjects, setCanvasItems]);
+
+  const handleDesignInCanvas = useCallback(async (element: StructuralElement, itemId: string) => {
+    try {
+      // Validate at least one load combination exists
+      if (!element.loadCombinations || element.loadCombinations.length === 0) {
+        console.error(`Cannot design "${element.name}": no load combinations found.`);
+        return;
+      }
+
+      // Ensure individual reaction load combinations exist
+      const comboUtils = new LoadCombinationUtils();
+      let elementData = comboUtils.reactionLoadCombinations(element, { forceRegenerate: false, includeInactive: false, customFactors: {} });
+
+      // Call design API for all combinations
+      const designResults = await designAllCombinations(elementData);
+
+      // Build updated element with results
+      const updatedElement: StructuralElement = {
+        ...elementData,
+        designResults,
+        updatedAt: new Date(),
+        version: (elementData.version || 0) + 1,
+      };
+
+      // Update element inside projects state if present
+      if (updatedElement.projectId) {
+        setProjects(prev => prev.map(p => {
+          if (p.id === updatedElement.projectId) {
+            const existingIndex = (p.elements || []).findIndex(el => el.id === updatedElement.id);
+            if (existingIndex > -1) {
+              const newEls = [...(p.elements || [])];
+              newEls[existingIndex] = updatedElement;
+              return { ...p, elements: newEls };
+            }
+            // If not found, append
+            return { ...p, elements: [...(p.elements || []), updatedElement] };
+          }
+          return p;
+        }));
+      }
+
+      // Update the canvas item with design results
+      setCanvasItems(prev => prev.map(item => 
+        item.id === itemId ? { ...item, data: updatedElement } as CanvasItem : item
+      ));
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Canvas design failed:', error);
+      // Could add toast notification here for user feedback
+    }
+  }, [setProjects, setCanvasItems]);
   
   const handleMouseDownOnResizer = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -829,8 +954,17 @@ const App: React.FC = () => {
             <>
                 <div onMouseDown={handleMouseDownOnResizer} className="w-1.5 h-full cursor-col-resize bg-base-300 hover:bg-primary transition-colors flex-shrink-0" />
                 <div className="h-full flex flex-col bg-base-100 shadow-lg flex-shrink-0" style={{ width: `${canvasWidth}px` }}>
-                    <Canvas items={canvasItems} selectedItemId={selectedCanvasItemId} onSelectItem={setSelectedCanvasItemId}
-                        onCloseItem={handleRemoveCanvasItem} onUpdateItem={handleUpdateCanvasItem} onAnalyzeInCanvas={handleAnalyzeInCanvas} />
+          <Canvas items={canvasItems} 
+            selectedItemId={selectedCanvasItemId} 
+            onSelectItem={setSelectedCanvasItemId}
+            onCloseItem={handleRemoveCanvasItem} 
+            onUpdateItem={handleUpdateCanvasItem} 
+            onAnalyzeInCanvas={handleAnalyzeInCanvas}
+            onElementSave={handleSaveInCanvas}
+            onElementDesign={handleDesignInCanvas}
+            sections={sections}
+            projects={projects}
+          />
                 </div>
             </>
         )}

@@ -2,8 +2,10 @@
 
 import React, { useState } from 'react';
 import { CanvasItem, CanvasTextItem } from '../customTypes/types';
+import type { Element as StructuralElement } from '../customTypes/structuralElement';
 import { BeamInput } from '../customTypes/structuralElement';
 import { CloseIcon } from './utility/icons';
+import StructuralElementForm from './structuralEngineering/StructuralElementForm';
 import { BeamInputForm } from '././structuralEngineering/BeamInputForm';
 import { BeamAnalysisDisplay } from '././structuralEngineering/BeamAnalysisDisplay';
 import { Spinner } from './utility/Spinner';
@@ -15,6 +17,12 @@ interface CanvasProps {
     onCloseItem: (id: string) => void;
     onUpdateItem: (item: CanvasItem) => void;
     onAnalyzeInCanvas: (beamInput: BeamInput) => Promise<void>;
+    // New handlers for element actions inside the Canvas
+    onElementSave?: (element: StructuralElement, itemId: string) => Promise<void>;
+    onElementDesign?: (element: StructuralElement, itemId: string) => Promise<void>;
+    // Context data for StructuralElementForm
+    sections?: any[];
+    projects?: any[];
 }
 
 // A wrapper for the currently displayed item in the canvas, providing a title bar.
@@ -59,7 +67,11 @@ export const Canvas: React.FC<CanvasProps> = ({
     onSelectItem,
     onCloseItem, 
     onUpdateItem, 
-    onAnalyzeInCanvas 
+    onAnalyzeInCanvas,
+    onElementSave,
+    onElementDesign,
+    sections = [],
+    projects = []
 }) => {
     const [analyzingId, setAnalyzingId] = useState<string | null>(null);
 
@@ -76,6 +88,9 @@ export const Canvas: React.FC<CanvasProps> = ({
                 return item.title || 'Note';
             case 'beam_input':
                 return item.data.Name;
+            case 'element':
+                // element items store the Element under `data`
+                return (item as any).data?.name || 'Element';
             case 'beam_output':
                 return item.inputData.Name;
             default:
@@ -124,7 +139,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                     </div>
                 </div>
             )}
-            
+
+            {/* Canvas Content */}
             <div className="flex-grow overflow-y-auto p-4 bg-gray-50">
                 {items.length === 0 && (
                     <div className="text-center text-gray-500 mt-8">
@@ -138,6 +154,35 @@ export const Canvas: React.FC<CanvasProps> = ({
                             return (
                                 <SelectedItemWrapper title={selectedItem.title}>
                                     <TextCanvasItem item={selectedItem} onUpdate={onUpdateItem as (i: CanvasTextItem) => void} />
+                                </SelectedItemWrapper>
+                            );
+                        case 'element':
+                            // Render a full StructuralElementForm inside the Canvas for elements.
+                            const elementData = (selectedItem as any).data;
+                            const elementProjectId = elementData?.projectId;
+                            const elementProject = projects.find(p => p.id === elementProjectId);
+                            const elementDataList = elementProject?.elements || [];
+                            
+                            return (
+                                <SelectedItemWrapper title={`Element: ${elementData?.name || 'Element'}`}>
+                                    <StructuralElementForm
+                                        elementData={elementData}
+                                        isFormActive={true}
+                                        onSubmit={(data) => {
+                                            // wire design/submit to parent handler if provided, otherwise just update the canvas item
+                                            if (typeof onElementDesign === 'function') onElementDesign(data, selectedItem.id).catch(() => {});
+                                            onUpdateItem({ ...selectedItem, data } as CanvasItem);
+                                        }}
+                                        onCancel={() => onCloseItem(selectedItem.id)}
+                                        onSave={async (data) => {
+                                            if (typeof onElementSave === 'function') await onElementSave(data, selectedItem.id).catch(() => {});
+                                            onUpdateItem({ ...selectedItem, data } as CanvasItem);
+                                        }}
+                                        statusMessage={null}
+                                        sections={sections}
+                                        projectData={projects}
+                                        elementDataList={elementDataList}
+                                    />
                                 </SelectedItemWrapper>
                             );
                         case 'beam_input':

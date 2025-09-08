@@ -150,8 +150,21 @@ export const DesignResultsDisplay: React.FC<DesignResultsDisplayProps> = ({ resu
     return null;
   }
 
+  // Aggregate overall status and max metrics for preview summary
+  const overallStatus = results.every(r => (r?.capacity_data?.status || '').toString().toUpperCase() === 'PASS') ? 'PASS' : 'FAIL';
+  const maxBending = results.reduce((max, r) => Math.max(max, Math.abs(safeArrayValue(r.max_bending, 1) || 0)), 0);
+  const maxShear = results.reduce((max, r) => Math.max(max, Math.abs(safeArrayValue(r.max_shear, 1) || 0)), 0);
+  const maxDeflection = results.reduce((max, r) => Math.max(max, Math.abs(safeArrayValue(r.max_deflection, 1) || 0)), 0);
+
+  const summaryItems = [
+    { label: 'Status', value: overallStatus },
+    { label: 'Max Bending', value: `${formatNumber(maxBending / 1000, 2)} kNm` },
+    { label: 'Max Shear', value: `${formatNumber(maxShear / 1000, 2)} kN` },
+    { label: 'Max Deflection', value: `${formatNumber(maxDeflection * 1000, 2)} mm` }
+  ];
+
   return (
-    <FormCollapsibleSection title="Design Results" color="bg-teal-50/50" defaultCollapsed={false}>
+    <FormCollapsibleSectionWithStagedSummary title="Design Results" color="bg-teal-50/50" defaultStage="preview" summaryItems={summaryItems}>
       <div className="flex flex-col gap-2">
         {results.map((result, index) => (
             <FormCollapsibleSectionWithStagedSummary
@@ -395,7 +408,7 @@ export const DesignResultsDisplay: React.FC<DesignResultsDisplayProps> = ({ resu
             </FormCollapsibleSectionWithStagedSummary>
         ))}
       </div>
-    </FormCollapsibleSection>
+  </FormCollapsibleSectionWithStagedSummary>
   );
 };
 

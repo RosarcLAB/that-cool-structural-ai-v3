@@ -135,3 +135,9 @@ export const FolderIcon = ({ className }: { className?: string }) => (
     <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
   </svg>
 );
+
+export const PinIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M12.707 2.293a1 1 0 00-1.414 0L9 4.586 5.707 7.879a1 1 0 00-.293.707V11a1 1 0 00.293.707l6 6a1 1 0 001.414 0l2.293-2.293L21 13.414a1 1 0 000-1.414l-8.293-8.293zM7.5 9.914L9 8.414 14.586 14 13.086 15.5 7.5 9.914z" />
+  </svg>
+);

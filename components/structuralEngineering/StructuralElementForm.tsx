@@ -3,11 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { Element, LoadType, SupportFixityType, LoadCaseType, LoadCombination, LoadCaseFactor, LoadCombinationUtils, Load, DesignParameters, DesignOutput  } from '../../customTypes/structuralElement';
 import { ELEMENT_TYPE_OPTIONS } from '../../customTypes/structuralElement';
 // Ensure ELEMENT_TYPE_OPTIONS is exported as a default array from structuralElement.ts
-import { AddIcon, RemoveIcon, SaveIcon  } from '../utility/icons';
+import { AddIcon, RemoveIcon, SaveIcon } from '../utility/icons';
  import { FormCollapsibleSectionWithStagedSummary, FormCollapsibleSection } from '../utility/CollapsibleSection';
 import { MaterialType, SectionShape, SectionProperties } from '../../customTypes/SectionProperties';
 import { Project } from '../../customTypes/types';
 import { DesignResultsDisplay } from './DesignResultsDisplay';
+import { projectTransferRegistry } from '../../services/projectTransferRegistry';
+import { projectService } from '../../services/projectService';
  
  
  
@@ -29,6 +31,7 @@ interface StructuralElementFormProps {
     projectData?: Project[];
     wasCancelledProp?: boolean; // Let parent control cancel state
     statusMessage?: StatusMessage | null; // Status messages from parent
+    onPin?: () => void; // optional callback to pin this form's element to the Canvas
 }
 
 const inputClasses = "block w-full rounded-md border border-gray-300 p-2 bg-white shadow-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-teal-200/50";
@@ -36,11 +39,55 @@ const labelClasses = "block text-sm font-medium text-gray-700 mb-1";
 
 // FIX: Export the component to be used in other files.
 const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
-    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, sections, projectData, statusMessage }) => {
-     const [element, setElement] = useState<Element>(elementData);
-     const [showResults, setShowResults] = useState<{[id: string]: boolean}>({});
-     const [isSaved, setIsSaved] = useState<boolean>(elementData.isSaved || false);
-    const elementNames = elementDataList ? elementDataList.map(el => el.name) : [];
+    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, sections, projectData, statusMessage, onPin }) => {
+    const [element, setElement] = useState<Element>(elementData);
+    const [showResults, setShowResults] = useState<{[id: string]: boolean}>({});
+    const [isSaved, setIsSaved] = useState<boolean>(elementData.isSaved || false);
+    // Local UI: pinned to canvas (removed — pin handled by parent)
+    // Transfer UI state
+    const [newLoadSourceMode, setNewLoadSourceMode] = useState<'manual' | 'fromProjectReaction'>('manual');
+    const [reactionSourceElementId, setReactionSourceElementId] = useState<string>('');
+    const [reactionSourceSupportIndex, setReactionSourceSupportIndex] = useState<number | ''>('');
+    // Candidate source elements: saved elements in the same project (exclude self)
+    const [fetchedCandidateElements, setFetchedCandidateElements] = useState<any[]>([]);
+    useEffect(() => {
+        let mounted = true;
+        // If parent didn't pass an elementDataList, try fetching project elements for this element's project
+        if ((!elementDataList || elementDataList.length === 0) && element.projectId) {
+            projectService.getProjectElements(element.projectId).then(els => {
+                if (!mounted) return;
+                setFetchedCandidateElements(els || []);
+            }).catch(err => {
+                console.warn('Failed to fetch project elements for transfer candidates', err);
+            });
+        }
+        return () => { mounted = false; };
+    }, [element.projectId, elementDataList]);
+
+    const candidateElements: any[] = (elementDataList && elementDataList.length > 0 ? elementDataList : fetchedCandidateElements).filter(el => el.id && el.projectId && el.projectId === element.projectId && el.id !== element.id);
+    const selectedSourceElement: any | undefined = candidateElements.find((p: any) => p.id === reactionSourceElementId);
+    const selectedSourceSupports: any[] = selectedSourceElement?.supports || [];
+
+    // Subscribe to any transfer groups referenced by this element so updates propagate
+    useEffect(() => {
+        const unsubscribers: Array<() => void> = [];
+        element.appliedLoads.forEach(load => {
+            const tg = (load as any).transfer;
+            if (tg && tg.transferGroupId && tg.projectId) {
+                const unsub = projectTransferRegistry.subscribe(tg.projectId, tg.transferGroupId, (canonical) => {
+                    setElement(prev => {
+                        const idx = prev.appliedLoads.findIndex(l => (l as any).transfer?.transferGroupId === canonical.transfer!.transferGroupId);
+                        if (idx === -1) return prev;
+                        const copy = [...prev.appliedLoads];
+                        copy[idx] = { ...(canonical as any) };
+                        return { ...prev, appliedLoads: copy };
+                    });
+                });
+                unsubscribers.push(unsub);
+            }
+        });
+        return () => unsubscribers.forEach(u => u());
+    }, [element.id, element.appliedLoads]);
 
     
 
@@ -275,9 +322,21 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             const newLoads = [...prev.appliedLoads];
             const newForces = [...newLoads[loadIndex].forces];
             const newMagnitudes = [...newForces[forceIndex].magnitude];
-            newMagnitudes[magnitudeIndex] = Number(value) * 1000; // Convert kN input to N
+            const magInN = Number(value) * 1000; // Convert kN input to N
+            newMagnitudes[magnitudeIndex] = magInN;
             newForces[forceIndex] = { ...newForces[forceIndex], magnitude: newMagnitudes };
             newLoads[loadIndex] = { ...newLoads[loadIndex], forces: newForces };
+
+            // If this load is synced via transfer, update canonical registry immediately
+            const load = newLoads[loadIndex] as any;
+            if (load.transfer?.transferGroupId && load.transfer?.projectId) {
+                try {
+                    projectTransferRegistry.update(load.transfer.projectId, load.transfer.transferGroupId, load);
+                } catch (err) {
+                    console.warn('Failed to update transfer registry', err);
+                }
+            }
+
             return { ...prev, appliedLoads: newLoads };
         });
       };
@@ -531,7 +590,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
     //#region Render Main Form
     return (
-        <div className="space-y-4 border p-4 rounded-xl shadow-sm bg-base-100">
+        <div className={`space-y-4 border p-4 rounded-xl shadow-sm bg-base-100 relative`}>
             <h3 className="text-lg font-bold text-center text-neutral">{element.name}</h3>
 
             {/* General Properties Section */}
@@ -960,7 +1019,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.d}
                                             onChange={e => updateField('d', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -969,7 +1028,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.b}
                                             onChange={e => updateField('b', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -978,7 +1037,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.t || 0}
                                             onChange={e => updateField('t', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -987,7 +1046,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.web_thickness || 0}
                                             onChange={e => updateField('web_thickness', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -996,7 +1055,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.flange_thickness || 0}
                                             onChange={e => updateField('flange_thickness', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1005,7 +1064,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.Ix}
                                             onChange={e => updateField('Ix', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1014,7 +1073,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.Iy}
                                             onChange={e => updateField('Iy', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1023,7 +1082,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.Zx}
                                             onChange={e => updateField('Zx', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1032,7 +1091,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.Zy}
                                             onChange={e => updateField('Zy', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1041,7 +1100,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.A}
                                             onChange={e => updateField('A', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1050,7 +1109,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.J || 0}
                                             onChange={e => updateField('J', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1059,7 +1118,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.Sx || 0}
                                             onChange={e => updateField('Sx', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1068,7 +1127,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.Sy || 0}
                                             onChange={e => updateField('Sy', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1077,7 +1136,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.H || 0}
                                             onChange={e => updateField('H', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1086,7 +1145,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.x || 0}
                                             onChange={e => updateField('x', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1095,7 +1154,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.r || 0}
                                             onChange={e => updateField('r', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1104,7 +1163,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.d1 || 0}
                                             onChange={e => updateField('d1', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1113,7 +1172,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.Cw || 0}
                                             onChange={e => updateField('Cw', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1122,7 +1181,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.rx || 0}
                                             onChange={e => updateField('rx', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
@@ -1131,7 +1190,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             type="number" 
                                             value={section.ry || 0}
                                             onChange={e => updateField('ry', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            className={inputClasses}
                                         />
                                     </div>
                                 </div>
@@ -1146,7 +1205,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             {/* Supports Section */}
             <FormCollapsibleSectionWithStagedSummary title="Supports" defaultStage="preview" color="bg-sky-50/50" 
                 summaryItems={[
-                {label: "Count", value: element.supports.length},
+                {label: "", value: element.supports.length+" No"},
                 {label: "Types", value: element.supports, arrayDisplayType: 'list', arrayProperty: 'fixity', maxArrayItems: 3},
                 {label: 'Positions', value: element.supports, arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 3, unit: 'm' }
 
@@ -1179,7 +1238,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             {/* Applied Loads Section */}
             <FormCollapsibleSectionWithStagedSummary title="Applied Loads" color="bg-teal-50/50" enableDoubleClickExpand={true} defaultStage="preview"
                 summaryItems={[
-                    { label: 'Count', value: element.appliedLoads, arrayDisplayType: 'count' },
+                    { label: '', value: element.appliedLoads.length+" No", arrayDisplayType: 'count' },
                     { label: 'Types', value: element.appliedLoads, arrayDisplayType: 'list', arrayProperty: 'type', maxArrayItems: 3 },
                     { label: 'Load Cases', value: element.appliedLoads.flatMap(load => load.forces.map(f => f.loadCase)), arrayDisplayType: 'list', maxArrayItems: 3 },
                     { label: 'Magnitudes', value: element.appliedLoads.flatMap(load => load.forces.map(f => formatMagnitudeWithUnit(f.magnitude, load.type))), arrayDisplayType: 'list', maxArrayItems: 3 }
@@ -1294,7 +1353,47 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                             </div>
                         </FormCollapsibleSectionWithStagedSummary>
                     ))}
-                    <button type="button" onClick={addAppliedLoad} className="w-full mt-2 flex items-center justify-center gap-2 text-sm font-semibold p-2 border-2 border-dashed border-gray-300 rounded-lg text-teal-700 hover:border-teal-500 hover:bg-teal-50"><AddIcon className="w-5 h-5"/> Add Applied Load</button>
+                    <div className="w-full mt-2">
+                        <div className="flex flex-col md:flex-row items-stretch gap-2">
+                            <select value={newLoadSourceMode} onChange={e => setNewLoadSourceMode(e.target.value as any)} className={inputClasses}>
+                                <option value="manual">Manual</option>
+                                <option value="fromProjectReaction">From Project Reaction</option>
+                            </select>
+
+                            {newLoadSourceMode === 'fromProjectReaction' ? (
+                                <div className="flex gap-2 w-full">
+                                    <select value={reactionSourceElementId} onChange={e => setReactionSourceElementId(e.target.value)} className={inputClasses}>
+                                        <option value="">Select source element</option>
+                                        {candidateElements.map(pe => (
+                                            <option key={pe.id} value={pe.id}>{pe.name || pe.id}</option>
+                                        ))}
+                                    </select>
+
+                                    <select value={reactionSourceSupportIndex as any} onChange={e => setReactionSourceSupportIndex(e.target.value === '' ? '' : Number(e.target.value))} className={inputClasses}>
+                                        <option value="">Support #</option>
+                                        {selectedSourceSupports.map((s: any, idx: number) => (
+                                            <option key={idx} value={idx}>Support {idx + 1} @ {String(s.position)}</option>
+                                        ))}
+                                    </select>
+
+                                    <button type="button" onClick={async () => {
+                                        try {
+                                            if (!reactionSourceElementId || reactionSourceSupportIndex === '') return;
+                                            const src = candidateElements.find(p => p.id === reactionSourceElementId);
+                                            if (!src) return;
+                                            const canonical = projectTransferRegistry.createPointLoadFromReaction(src, reactionSourceSupportIndex as number, element, (pos) => String(pos));
+                                            // append canonical to local element appliedLoads
+                                            setElement(prev => ({ ...prev, appliedLoads: [...prev.appliedLoads, canonical as any] }));
+                                        } catch (err) {
+                                            console.error('Transfer failed', err);
+                                        }
+                                    }} className="btn-add">Transfer</button>
+                                </div>
+                            ) : (
+                                <button type="button" onClick={addAppliedLoad} className="w-full flex items-center justify-center gap-2 text-sm font-semibold p-2 border-2 border-dashed border-gray-300 rounded-lg text-teal-700 hover:border-teal-500 hover:bg-teal-50"><AddIcon className="w-5 h-5"/> Add Applied Load</button>
+                            )}
+                        </div>
+                    </div>
                  </div>
             </FormCollapsibleSectionWithStagedSummary>
 
@@ -1436,8 +1535,6 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 </div>
             </FormCollapsibleSectionWithStagedSummary>
 
-            
-
              {/* Design Results Display */}
             {element.designResults && element.designResults.length > 0 && (
                 <DesignResultsDisplay 
@@ -1445,6 +1542,8 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     isVisible={true} 
                 />
             )}
+
+            {/* Pin to canvas is handled by the chat overlay; parent will call onPin when requested. */}
 
             {/* Status Message Area */}
             {statusMessage && (

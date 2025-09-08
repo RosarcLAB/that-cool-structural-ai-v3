@@ -101,7 +101,7 @@ export const FormCollapsibleSectionWithStagedSummary: React.FC<{
         const stringValue = item.value.toString().trim();
         return stringValue !== '' && stringValue !== 'Not selected';
     }) || [];
-    const displayItems = validItems.slice(0, 5); // Show up to 4 items
+    const displayItems = validItems.slice(0, 5); // Show up to 5 items
 
     // Format array values (same logic as FormCollapsibleSectionWithSummary)
     const formatArrayValue = (item: SummaryItem): string => {

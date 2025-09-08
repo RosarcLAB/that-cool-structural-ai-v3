@@ -9,7 +9,7 @@ import { BeamAnalysisDisplay, type BeamAnalysisDisplayHandle } from '../structur
 // FIX: Changed to default import as StructuralElementForm is now a default export.
 import StructuralElementForm from '../structuralEngineering/StructuralElementForm';
 import { Spinner } from '../utility/Spinner';
-import { SendIcon, UploadIcon, AddIcon, DocumentMagnifyingGlassIcon, PanelRightOpenIcon, ChatBubbleLeftRightIcon, MicrophoneIcon, CloseIcon, BuildingBlockIcon, ListBulletIcon } from '../utility/icons';
+import { SendIcon, UploadIcon, AddIcon, DocumentMagnifyingGlassIcon, PanelRightOpenIcon, ChatBubbleLeftRightIcon, MicrophoneIcon, CloseIcon, BuildingBlockIcon, ListBulletIcon, PinIcon } from '../utility/icons';
 
 // HACK: Add barebones type for SpeechRecognition to fix build error.
 interface SpeechRecognition {
@@ -172,7 +172,36 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                                             statusMessage={msg.statusMessage || null}
                                             sections={sections}
                                             projectData={projects}
+                                            // Provide the list of elements for the element's project so the form can offer project-scoped candidates
+                                            elementDataList={projects.find(p => p.id === element.projectId)?.elements || []}
+                                            onPin={() => handleAddToCanvas(msg, index)}
                                         />
+                                        {/* Floating Pin Button - Only show when form is active */}
+                                        {msg.isFormActive?.[index] && (
+                                            <button
+                                                onClick={() => handleAddToCanvas(msg, index)}
+                                                title="Pin to canvas"
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: msg.sender === 'user' ? 'unset' : 12,
+                                                    right: msg.sender === 'user' ? 12 : 'unset',
+                                                    bottom: -28,
+                                                    backgroundColor: 'white',
+                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.12)',
+                                                    color: 'red',
+                                                    border: '2px solid',
+                                                    borderColor: 'rgba(59,130,246,0.3)',
+                                                    padding: 8,
+                                                    zIndex: 2,
+                                                    borderRadius: '9999px',
+                                                    transition: 'background 0.2s, box-shadow 0.2s'
+                                                }}
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style={{ width: 22, transform: 'rotate(-45deg)' }}>
+                                                    <path d="M12.707 2.293a1 1 0 00-1.414 0L9 4.586 5.707 7.879a1 1 0 00-.293.707V11a1 1 0 00.293.707l6 6a1 1 0 001.414 0l2.293-2.293L21 13.414a1 1 0 000-1.414l-8.293-8.293zM7.5 9.914L9 8.414 14.586 14 13.086 15.5 7.5 9.914z" />
+                                                </svg>
+                                            </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>

@@ -112,7 +112,13 @@ export interface CanvasBeamOutputItem {
     outputData: BeamOutput;
 }
 
-export type CanvasItem = CanvasTextItem | CanvasBeamInputItem | CanvasBeamOutputItem;
+export interface CanvasElementItem {
+    id: string;
+    type: 'element';
+    data: Element;
+}
+
+export type CanvasItem = CanvasTextItem | CanvasBeamInputItem | CanvasBeamOutputItem | CanvasElementItem;
 
 // --- Loading Library Types ---
 
