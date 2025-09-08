@@ -73,6 +73,12 @@ export enum DesignMethodType {
 export interface Support {
   position: number;
   fixity: SupportFixityType;
+  reaction?: {
+    Fx?: number;
+    Fy?: number;
+    Mz?: number;
+  };
+
 }
 // Enhanced support interface for advanced structural analysis
 
@@ -617,4 +623,6 @@ export interface DesignOutput {
   deflection: number[];
   x_values: number[];
   combinationName?: string; // Added to track which combination this result belongs to
+  combinationType?: 'Ultimate' | 'Serviceability' | 'Other' | 'Reaction';
+
 }
