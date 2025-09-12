@@ -21,6 +21,7 @@ import SignIn from './components/auth/SignIn';
 import { auth } from './config/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { ProjectsDrawer } from './components/projects/ProjectsDrawer';
+import { ConfirmDeleteModal } from './components/utility/ConfirmDeleteModal';
 
 
 const MAX_HISTORY_STATES = 30;
@@ -28,6 +29,7 @@ type AppContext = 'chat' | 'canvas' | 'attachm.';
 type FormMode = 'create' | 'edit' | 'duplicate';
 
 const App: React.FC = () => {
+  //#region constants and states
   // State for managing the list of chat messages.
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // State for storing snapshots of the message history for the undo functionality.
@@ -62,9 +64,19 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isProjectsDrawerOpen, setIsProjectsDrawerOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [projectSearchTerm, setProjectSearchTerm] = useState('');
+  // State for delete confirmation modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [elementToDelete, setElementToDelete] = useState<StructuralElement | null>(null);
+  //#endregion
 
-  // Fetches or refreshes the list of sections from the database.
+
+
+
+
+  //#region Call backs
+  /** 
+   *  Fetches or refreshes the list of sections from the database. 
+   * */
   const refreshSections = useCallback(async () => {
     try {
         const fetchedSections = await sectionService.getAllSections();
@@ -76,7 +88,7 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Fetches or refreshes the list of projects from the database.
+  /** Fetches or refreshes the list of projects from the database. */
   const refreshProjects = useCallback(async () => {
     try {
         const userId = user?.uid || 'demo-user-id'; // Use actual user ID if authenticated
@@ -90,7 +102,14 @@ const App: React.FC = () => {
         // addMessage({ sender: 'ai', text: `Error fetching projects: ${errorMessage}`, type: 'error' });
     }
   }, [user]);
+  //#endregion
 
+
+
+
+
+
+  //#region useEffects
   // Initial fetch of sections when the app loads.
   useEffect(() => {
     refreshSections();
@@ -110,8 +129,15 @@ const App: React.FC = () => {
       return unsubscribe;
     }
   }, []);
-  
-  // Saves a snapshot of the current messages state to the history for undo purposes.
+  //#endregion
+
+
+
+
+
+
+  //#region Message Management
+  /** Saves a snapshot of the current messages state to the history for undo purposes. */
   const saveHistorySnapshot = () => {
     setHistory(prev => {
         const newHistory = [...prev, messages];
@@ -123,7 +149,7 @@ const App: React.FC = () => {
     });
   };
 
-  // Handles the undo action, reverting the chat to its last saved state.
+  /** Handles the undo action, reverting the chat to its last saved state. */
   const handleUndo = useCallback(() => {
     if (history.length > 0) {
         const lastState = history[history.length - 1];
@@ -132,8 +158,9 @@ const App: React.FC = () => {
     }
   }, [history]);
 
-  // Utility function to add a new message to the chat history.
-  // Using useCallback to ensure function identity is stable where needed.
+  /** Utility function to add a new message to the chat history.
+   * Using useCallback to ensure function identity is stable where needed.
+   */
   const addMessage = useCallback((message: Omit<ChatMessage, 'id'>) => {
     const newMessage = { ...message, id: crypto.randomUUID(), timestamp: new Date() };
     setMessages(prev => [...prev, newMessage]);
@@ -161,8 +188,8 @@ const App: React.FC = () => {
       setContext('chat');
     }
   }, [context, canvasItems, fileToUpload, addMessage]);
-  
-  // Generic handler to deactivate a form in a message
+
+  /** Generic handler to deactivate a form in a message */
   const deactivateFormInMessage = useCallback((messageId: string, formIndex: number) => {
       setMessages(prev =>
       prev.map(msg => {
@@ -175,8 +202,23 @@ const App: React.FC = () => {
       })
     );
   }, []);
+  //#endregion
 
-  // --- BeamInputForm Handlers ---
+
+
+
+
+  //#region Form Handlers
+
+
+
+  //#region --- BeamInput ---
+  /**
+   * Handles changes to the beam input form within a specific message.
+   * @param messageId - The ID of the message containing the form.
+   * @param formIndex - The index of the form within the message (for messages with multiple forms).
+   * @param updatedData - The updated beam input data from the form.
+   */
   const handleBeamFormChange = useCallback((messageId: string, formIndex: number, updatedData: BeamInput) => {
       setMessages(prev =>
         prev.map(msg => {
@@ -190,6 +232,12 @@ const App: React.FC = () => {
       );
   }, []);
 
+  /** Handles the submission of the beam input form.
+   * Initiates analysis and updates the chat with results or errors.
+   * @param data - The beam input data.
+   * @param messageId - The ID of the message being updated.
+   * @param formIndex - The index of the form being submitted.
+   */
   const handleBeamFormSubmit = useCallback(async (data: BeamInput, messageId: string, formIndex: number) => {
     deactivateFormInMessage(messageId, formIndex);
     setIsLoading(true);
@@ -213,11 +261,20 @@ const App: React.FC = () => {
     }
   }, [deactivateFormInMessage, addMessage]);
 
+  /** Handles cancellation of the beam input form.
+   * Deactivates the form and resets any temporary state.
+   */
   const handleBeamFormCancel = useCallback((messageId: string, formIndex: number) => {
     deactivateFormInMessage(messageId, formIndex);
   }, [deactivateFormInMessage]);
+  //#endregion
 
-  // --- StructuralElementForm Handlers ---
+
+
+
+
+
+  //#region --- Element ---
   const handleElementFormChange = useCallback((messageId: string, formIndex: number, updatedData: StructuralElement) => {
       setMessages(prev =>
         prev.map(msg => {
@@ -325,11 +382,21 @@ const App: React.FC = () => {
       }
   
     }, [user, setProjects, setMessages]);
-
+  
+    /** Handles cancellation of the structural element form.
+     * Deactivates the form and resets any temporary state.
+     * @param messageId - The ID of the message containing the form.
+     * @param formIndex - The index of the form within the message.
+     */
   const handleElementFormCancel = useCallback((messageId: string, formIndex: number) => {
       deactivateFormInMessage(messageId, formIndex);
   }, [deactivateFormInMessage]);
 
+  /** Handles saving the structural element to the database.
+   * Implements optimistic UI updates and error handling.
+   * @param data - The structural element data to save.
+   * @param messageId - (Optional) The ID of the message associated with the element, for status updates.
+   */
   const handleElementFormSave = useCallback(async (data: StructuralElement, messageId?: string) => {
       if (!data) return;
 
@@ -403,29 +470,106 @@ const App: React.FC = () => {
         }
       }
   }, [setMessages, setProjects]);
-  
-  // --- StructuralSection Handlers ---
-    const handleSaveSection = async (sectionData: SectionProperties, mode: FormMode): Promise<SectionProperties | null> => {
-      try {
-          if (mode === 'edit') {
-              await sectionService.updateSection(sectionData.id, sectionData);
-              // Return the updated section data (caller can refresh/listen to refreshed sections)
-              await refreshSections();
-              return sectionData;
-          } else { // 'create' or 'duplicate'
-              const { id, ...newSectionData } = sectionData;
-              await sectionService.createSection(newSectionData as SectionProperties);
-              // After creating, refresh and return the created data (ID may be assigned by the service)
-              await refreshSections();
-              return sectionData;
-          }
-      } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-          addMessage({ sender: 'ai', text: `Failed to save section: ${errorMessage}`, type: 'error' });
-          return null;
-      }
-    };
 
+  // New handlers for ElementCard
+  const handleElementDoubleClick = useCallback((element: StructuralElement) => {
+    // Add element to canvas for editing
+    const newCanvasItem: CanvasItem = {
+      id: crypto.randomUUID(),
+      type: 'element',
+      data: element,
+    };
+    setCanvasItems(prev => [...prev, newCanvasItem]);
+    setIsCanvasOpen(true); // Ensure canvas is open
+    addMessage({ sender: 'ai', text: `Element "${element.name}" added to canvas for editing.`, type: 'text' });
+  }, [setCanvasItems, setIsCanvasOpen, addMessage]);
+
+  const handleElementDelete = useCallback(async (elementId: string) => {
+    // Find the element to delete (for modal display)
+    const element = projects.flatMap(p => p.elements || []).find(e => e.id === elementId);
+    if (element) {
+      setElementToDelete(element);
+      setIsDeleteModalOpen(true);
+    }
+  }, [projects]);
+
+  const confirmElementDelete = useCallback(async () => {
+    if (!elementToDelete) return;
+    try {
+      await projectService.archiveElement(elementToDelete.projectId!, elementToDelete.id); // Server soft delete
+      setProjects(prev => prev.map(p => ({ ...p, elements: p.elements?.filter(e => e.id !== elementToDelete.id) })));
+      addMessage({ sender: 'ai', text: `Element "${elementToDelete.name}" deleted successfully.`, type: 'text' });
+    } catch (error) {
+      addMessage({ sender: 'ai', text: `Failed to delete element: ${error.message}`, type: 'error' });
+    } finally {
+      setIsDeleteModalOpen(false);
+      setElementToDelete(null);
+    }
+  }, [elementToDelete, setProjects, addMessage]);
+
+  const handleElementDuplicate = useCallback(async (element: StructuralElement) => {
+    if (!element.projectId || !element.id) {
+      addMessage({ sender: 'ai', text: 'Cannot duplicate an element without a project or ID.', type: 'error' });
+      return;
+    }
+    try {
+      // 1. Call the dedicated service function to duplicate the element on the server
+      const newElementId = await projectService.duplicateElement(element.projectId, element.id);
+      
+      // 2. Fetch the newly created element from the server to get all its data
+      const newElement = await projectService.getElement(element.projectId, newElementId);
+
+      if (newElement) {
+        // 3. Add the new element to the top of the list in the local state
+        setProjects(prev => prev.map(p => 
+          p.id === element.projectId 
+            ? { ...p, elements: [newElement, ...(p.elements || [])] } 
+            : p
+        ));
+        addMessage({ sender: 'ai', text: `Element duplicated as "${newElement.name}".`, type: 'text' });
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      addMessage({ sender: 'ai', text: `Failed to duplicate element: ${errorMessage}`, type: 'error' });
+    }
+  }, [setProjects, addMessage]);
+
+  //#endregion
+  
+
+
+
+  //#region --- Section ---
+  /**
+   * Save a section (create or update)
+   * @param sectionData The section data to save
+   * @param mode The mode of the operation (create, edit, duplicate)
+   * @returns The saved section data or null if failed
+   */
+  const handleSaveSection = async (sectionData: SectionProperties, mode: FormMode): Promise<SectionProperties | null> => {
+    try {
+        if (mode === 'edit') {
+            await sectionService.updateSection(sectionData.id, sectionData);
+            // Return the updated section data (caller can refresh/listen to refreshed sections)
+            await refreshSections();
+            return sectionData;
+        } else { // 'create' or 'duplicate'
+            const { id, ...newSectionData } = sectionData;
+            await sectionService.createSection(newSectionData as SectionProperties);
+            // After creating, refresh and return the created data (ID may be assigned by the service)
+            await refreshSections();
+            return sectionData;
+        }
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        addMessage({ sender: 'ai', text: `Failed to save section: ${errorMessage}`, type: 'error' });
+        return null;
+    }
+  };
+  /** Deletes a section by ID and refreshes the sections list.
+   * @param sectionId The ID of the section to delete
+   * @returns True if deletion was successful, false otherwise
+   */
   const handleDeleteSection = async (sectionId: string): Promise<boolean> => {
       if (!sectionId) return false;
       try {
@@ -438,8 +582,19 @@ const App: React.FC = () => {
           return false;
       }
   };
+  //#endregion
 
+
+
+
+
+
+  //#region AI Processes
   // AI Action Processing
+  /**
+   * Processes AI-generated actions and executes corresponding handlers.
+   * Uses a ref to maintain a stable instance of ProcessAiActions.
+   */
   const aiActionProcessor = useRef(
       new ProcessAiActions(
           messages,
@@ -451,10 +606,15 @@ const App: React.FC = () => {
       )
   ).current;
 
+  // Update dependencies in aiActionProcessor whenever they change
   useEffect(() => {
     aiActionProcessor.updateDependencies(messages, setMessages);
   }, [messages, setMessages, aiActionProcessor]);
-  
+
+  /**
+   * Processes AI-generated actions and executes corresponding handlers.
+   * @param actions - Array of actions generated by the AI.
+   */
   const processAiActions = useCallback(async (actions: Action[]) => {
       for (const action of actions) {
           switch (action.type) {
@@ -532,7 +692,12 @@ const App: React.FC = () => {
       }
   }, [aiActionProcessor, saveHistorySnapshot]);
 
-
+  // AI Decision Processing
+  /**
+   * Processes the AI's decision output and triggers action processing.
+   * Uses a ref to maintain a stable instance of ProcessAiDecision.
+   * @param decision - The decision object returned by the AI.
+   */
   const aiDecisionProcessor = useRef(new ProcessAiDecision(addMessage, (actions) => processAiActions(actions))).current;
   const processAiDecision = useCallback(async (decision: any) => {
     aiDecisionProcessor.processDecision(decision);
@@ -566,8 +731,14 @@ const App: React.FC = () => {
         break;
     }
   };
+  //#endregion
 
-  // --- Quick Action Handlers ---
+
+
+
+
+
+  //#region --- Quick Action ---
   const handleAddBeamClick = () => {
     const beamCount = messages.reduce((count, msg) => msg.beamInputsData ? count + msg.beamInputsData.length : count, 0);
     const newBeamData: BeamInput = JSON.parse(JSON.stringify({
@@ -703,7 +874,7 @@ const App: React.FC = () => {
             });
             return chatBeams;
         }
-    };
+  };
 
   const getElementsFromContext = (context: AppContext, selectedItemId: string | null): StructuralElement[] => {
         if (context === 'canvas') {
@@ -723,7 +894,7 @@ const App: React.FC = () => {
             });
             return chatElements;
         }
-    };
+  };
 
   const handleSendMessage = async () => {
     if ((userInput.trim() === '' && !fileToUpload) || isLoading) return;
@@ -775,8 +946,15 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   };
-  
-  // --- Canvas Handlers ---
+  //#endregion
+
+
+
+
+
+
+
+  //#region --- Canvas ---
   const handleAddToCanvas = useCallback((msg: ChatMessage, formIndex?: number) => {
     let newItem: CanvasItem | null = null;
     const index = typeof formIndex === 'number' ? formIndex : 0;
@@ -939,6 +1117,7 @@ const App: React.FC = () => {
       throw error; // Re-throw to let Canvas component handle status message
     }
   }, [setProjects, setCanvasItems]);
+
   const handleCanvasStatusUpdate = useCallback((itemId: string, status: StatusMessage | null) => {
     // Optional: Could add global status handling here if needed
     // For now, Canvas handles its own status display
@@ -955,17 +1134,15 @@ const App: React.FC = () => {
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, []);
+  //#enregion
+  
+  //#endregion Handlers
 
-  const filteredProjects = projects.filter(project =>
-    project.name.toLowerCase().includes(projectSearchTerm.toLowerCase())
-  );
 
-  const filteredElements = selectedProject
-    ? (selectedProject.elements || []).filter(element =>
-        element.name.toLowerCase().includes(projectSearchTerm.toLowerCase())
-      )
-    : [];
 
+
+
+  //#region --- Render ---
   return (
     <>
       <UploadDrawingModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} onSubmit={handleDrawingAnalysis} />
@@ -976,20 +1153,30 @@ const App: React.FC = () => {
         onSave={handleSaveSection}
         onDelete={handleDeleteSection}
       />
+      
+      <ConfirmDeleteModal
+        isOpen={isDeleteModalOpen}
+        elementName={elementToDelete?.name || ''}
+        onConfirm={confirmElementDelete}
+        onCancel={() => setIsDeleteModalOpen(false)}
+      />
+
       <div className={`flex h-screen bg-base-200 font-sans overflow-hidden transition-all duration-300`}>
         <ProjectsDrawer
           isOpen={isProjectsDrawerOpen}
           onClose={() => setIsProjectsDrawerOpen(false)}
-          projects={filteredProjects}
-          elements={filteredElements}
+          projects={projects}
+          elements={selectedProject ? selectedProject.elements || [] : []}
           selectedProject={selectedProject}
           onSelectProject={setSelectedProject}
           onBackToProjects={() => setSelectedProject(null)}
-          onSearch={setProjectSearchTerm}
           onAddProject={() => { /* TODO */ }}
           onEditProject={() => { /* TODO */ }}
           onDeleteProject={() => { /* TODO */ }}
           onElementClick={handleElementClick}
+          onElementDoubleClick={handleElementDoubleClick}
+          onElementDelete={handleElementDelete}
+          onElementDuplicate={handleElementDuplicate}
         />
         <div className={`flex-grow flex flex-col h-full relative transition-all duration-300 ${isProjectsDrawerOpen ? 'ml-80' : 'ml-0'}`}>
             {!isFirebaseConfigured && (
@@ -1059,6 +1246,7 @@ const App: React.FC = () => {
       </div>
     </>
   );
+  //#endregion Render
 };
 
 export default App;

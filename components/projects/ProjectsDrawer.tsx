@@ -1,45 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Element as StructuralElement } from '../../customTypes/structuralElement';
 import { Project} from '../../customTypes/types';
-import ProjectList from './ProjectList';
+// import ProjectList from './ProjectList'; // inlined below
 import { ElementCard } from './ElementCard';
 import { ProjectHeader } from './ProjectHeader';
+import { ProjectCard } from './ProjectCard';
+import { FolderIcon, CloseIcon, SearchIcon, AddIcon } from '../utility/icons';
 
-// SVG Icon Components to replace lucide-react
-const XIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
-  </svg>
-);
-
-const SearchIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <circle cx="11" cy="11" r="8"></circle>
-    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-  </svg>
-);
-
-const PlusIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <line x1="12" y1="5" x2="12" y2="19"></line>
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-  </svg>
-);
+// Removed local SVG definitions as they are now imported from icons.tsx
 
 interface ProjectsDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  projects: Project[];
-  elements: StructuralElement[];
-  selectedProject: Project | null;
-  onSelectProject: (project: Project) => void;
-  onBackToProjects: () => void;
-  onSearch: (term: string) => void;
-  onAddProject: () => void;
-  onEditProject: (project: Project) => void;
-  onDeleteProject: (id: string) => void;
-  onElementClick: (element: StructuralElement) => void;
+  isOpen: boolean; // Controls whether the drawer is visible
+  onClose: () => void; // Callback to close the drawer
+  projects: Project[];  // Raw projects list passed from parent
+  elements: StructuralElement[];  // Raw elements list for the selected project
+  selectedProject: Project | null; // Currently selected project, null if viewing projects list
+  onSelectProject: (project: Project) => void; // Callback when a project is selected
+  onBackToProjects: () => void; // Callback to return to projects list view
+  onAddProject: () => void; // Callback to add a new project
+  onEditProject: (project: Project) => void; // Callback to edit a project
+  onDeleteProject: (id: string) => void; // Callback to delete a project by ID
+  onElementClick: (element: StructuralElement) => void; // Callback when an element is clicked
+  onElementDoubleClick: (element: StructuralElement) => void; // Callback for double-clicking an element
+  onElementDelete: (elementId: string) => void; // Callback to delete an element by ID
+  onElementDuplicate: (element: StructuralElement) => void; // Callback to duplicate an element
 }
 
 export const ProjectsDrawer: React.FC<ProjectsDrawerProps> = ({
@@ -50,60 +34,111 @@ export const ProjectsDrawer: React.FC<ProjectsDrawerProps> = ({
   selectedProject,
   onSelectProject,
   onBackToProjects,
-  onSearch,
   onAddProject,
   onEditProject,
   onDeleteProject,
   onElementClick,
+  onElementDoubleClick,
+  onElementDelete,
+  onElementDuplicate,
 }) => {
+  // Local state for search filter term
+  const [filterTerm, setFilterTerm] = useState('');
+  // Early return if drawer is not open
   if (!isOpen) return null;
-
+  // Determine current view: 'projects' or 'elements'
   const view = selectedProject ? 'elements' : 'projects';
+  // Filter projects based on search term
+  const visibleProjects = projects.filter(p =>
+    p.name.toLowerCase().includes(filterTerm.toLowerCase())
+  );
+  // Filter elements based on search term
+  const visibleElements = elements.filter(e =>
+    e.name.toLowerCase().includes(filterTerm.toLowerCase())
+  );
 
   return (
+    // Main drawer container with fixed positioning and shadow
     <div className="absolute top-0 left-0 h-full w-80 bg-base-100 shadow-lg z-20 flex flex-col">
+      {/* Header section with title and close button */}
       <div className="flex-shrink-0 p-4 border-b border-base-300">
         {view === 'projects' ? (
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-bold">Projects</h2>
-            <button onClick={onClose} className="p-1 rounded-full hover:bg-base-300"><XIcon className="w-5 h-5" /></button>
+            <button onClick={onClose} className="p-1 rounded-full hover:bg-base-300">
+              <CloseIcon className="w-5 h-5" />
+            </button>
           </div>
         ) : (
-          <ProjectHeader project={selectedProject!} onBack={onBackToProjects} onEdit={onEditProject} />
+          <ProjectHeader
+            project={selectedProject!}
+            onBack={onBackToProjects}
+            onEdit={onEditProject}
+          />
         )}
       </div>
 
+      {/* Search input and add button section */}
       <div className="p-4">
-        <div className="relative">
+    <div className="relative rounded-full border-2 border-primary p-1">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-base-content/50" />
           <input
             type="text"
             placeholder={view === 'projects' ? 'Search projects...' : 'Search elements...'}
-            className="input input-bordered w-full pl-10"
-            onChange={(e) => onSearch(e.target.value)}
+            value={filterTerm}
+            onChange={e => setFilterTerm(e.target.value)}
+            className="input input-ghost w-full pl-10 rounded-full bg-white shadow-inner focus:outline-none"
           />
         </div>
         {view === 'projects' && (
-          <button onClick={onAddProject} className="btn btn-primary w-full mt-4">
-            <PlusIcon className="w-5 h-5" />
+          <button
+            onClick={onAddProject}
+            className="bg-primary text-white border-none w-full mt-4 rounded-lg py-2 flex items-center justify-center gap-2 hover:bg-primary-focus"
+          >
+            <AddIcon className="w-5 h-5" />
             Add Project
           </button>
         )}
       </div>
 
+      {/* Scrollable content area for lists */}
       <div className="flex-grow overflow-y-auto px-4 pb-4">
         {view === 'projects' ? (
-          <ProjectList
-            projects={projects}
-            selectedProjectId={null}
-            onSelectProject={(id) => onSelectProject(projects.find(p => p.id === id)!)}
-            onEditProject={onEditProject}
-            onDeleteProject={onDeleteProject}
-          />
+          <div className="space-y-2">
+            {visibleProjects.length > 0 ? (
+              visibleProjects.map(project => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  isSelected={selectedProject?.id === project.id}
+                  onNavigateToElements={() => onSelectProject(project)}
+                  onEdit={() => onEditProject(project)}
+                  onDelete={() => onDeleteProject(project.id)}
+                  onSetDefault={() => {/* TODO */}}
+                  onSave={() => {/* TODO */}}
+                  onShare={() => {/* TODO */}}
+                  isDefault={false}
+                />
+              ))
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <FolderIcon className="w-12 h-12 mx-auto mb-2" />
+                <p>No projects found.</p>
+                <p className="text-sm">Create a new project to get started.</p>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="space-y-2">
-            {elements.map(element => (
-              <ElementCard key={element.id} element={element} onClick={() => onElementClick(element)} />
+            {visibleElements.map(element => (
+              <ElementCard
+                key={element.id}
+                element={element}
+                onClick={() => onElementClick(element)}
+                onDoubleClick={() => onElementDoubleClick(element)}
+                onDelete={() => onElementDelete(element.id)}
+                onDuplicate={() => onElementDuplicate(element)}
+              />
             ))}
           </div>
         )}

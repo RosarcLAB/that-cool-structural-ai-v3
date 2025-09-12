@@ -1,5 +1,5 @@
 // components/Engineering/StructuralElementForm.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Element, LoadType, SupportFixityType, LoadCaseType, LoadCombination, LoadCaseFactor, LoadCombinationUtils, Load, DesignParameters, DesignOutput  } from '../../customTypes/structuralElement';
 import { ELEMENT_TYPE_OPTIONS } from '../../customTypes/structuralElement';
 // Ensure ELEMENT_TYPE_OPTIONS is exported as a default array from structuralElement.ts
@@ -43,7 +43,12 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const [element, setElement] = useState<Element>(elementData);
     const [showResults, setShowResults] = useState<{[id: string]: boolean}>({});
     const [isSaved, setIsSaved] = useState<boolean>(elementData.isSaved || false);
-    // Local UI: pinned to canvas (removed — pin handled by parent)
+    // State for the custom combobox
+    const [sectionSearchText, setSectionSearchText] = useState(element.sectionName || '');
+    const [filteredSections, setFilteredSections] = useState<SectionProperties[]>([]);
+    const [isDropdownVisible, setIsDropdownVisible] = useState(false);
+    const comboboxRef = useRef<HTMLDivElement>(null);
+
     // Transfer UI state
     const [newLoadSourceMode, setNewLoadSourceMode] = useState<'manual' | 'fromProjectReaction'>('manual');
     const [reactionSourceElementId, setReactionSourceElementId] = useState<string>('');
@@ -95,7 +100,17 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         return () => unsubscribers.forEach(u => u());
     }, [element.id, element.appliedLoads]);
 
-    
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (comboboxRef.current && !comboboxRef.current.contains(event.target as Node)) {
+                setIsDropdownVisible(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [comboboxRef]);
 
 
    
@@ -194,6 +209,32 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         });
     };
     
+    const handleSectionInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const searchText = e.target.value;
+        setSectionSearchText(searchText);
+        setElement(prev => ({ ...prev, sectionName: searchText, sections: [] })); // Clear full section data while typing
+
+        if (searchText) {
+            const filtered = sections
+                .filter(s => s.name.toLowerCase().includes(searchText.toLowerCase()))
+                .slice(0, 4);
+            setFilteredSections(filtered);
+        } else {
+            setFilteredSections(sections.slice(0, 4));
+        }
+        setIsDropdownVisible(true);
+    };
+
+    const handleSelectSection = (section: SectionProperties) => {
+        setSectionSearchText(section.name);
+        setElement(prev => ({
+            ...prev,
+            sectionName: section.name,
+            sections: [section]
+        }));
+        setIsDropdownVisible(false);
+    };
+
     const handleSectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const selectedSectionName = e.target.value;
         const selectedSection = sections.find(s => s.name === selectedSectionName);
@@ -630,12 +671,38 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                         />
                     </div>
                     <div><label className={labelClasses}>Section Count</label><input name="section_count" type="number" step="1" value={element.section_count} onChange={handleChange} className={inputClasses} /></div>
-                    <div>
+                    <div className="relative" ref={comboboxRef}>
                         <label className={labelClasses}>Section Name</label>
-                        <select name="sectionName" value={element.sectionName} onChange={handleSectionChange} className={inputClasses}>
-                            <option value="" disabled>Select a section</option>
-                            {sections.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                        </select>
+                        <input
+                            type="text"
+                            name="sectionName"
+                            value={sectionSearchText}
+                            onChange={handleSectionInputChange}
+                            onFocus={() => {
+                                setFilteredSections(sections.slice(0, 4));
+                                setIsDropdownVisible(true);
+                            }}
+                            className={inputClasses}
+                            placeholder="Type to search sections..."
+                            autoComplete="off"
+                        />
+                        {isDropdownVisible && (
+                            <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-auto shadow-lg">
+                                {filteredSections.length > 0 ? (
+                                    filteredSections.map(s => (
+                                        <li
+                                            key={s.id}
+                                            className="px-4 py-2 cursor-pointer hover:bg-teal-100"
+                                            onMouseDown={() => handleSelectSection(s)} // Use onMouseDown to fire before onBlur
+                                        >
+                                            {s.name}
+                                        </li>
+                                    ))
+                                ) : (
+                                    <li className="px-4 py-2 text-gray-500">No sections found</li>
+                                )}
+                            </ul>
+                        )}
                     </div>
                     <div>
                         <label className={labelClasses}>Project</label>

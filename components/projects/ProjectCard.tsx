@@ -1,49 +1,18 @@
 import React from 'react';
 import { Project } from '../../customTypes/types';
-
-// SVG Icon Components
-const MoreVertIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-  </svg>
-);
-const BookmarkIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.5 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
-    </svg>
-);
-const EditIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-    </svg>
-);
-const SaveIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 3.75H6.912a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H15M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.012-1.244h3.86M12 4.5v6.75" />
-    </svg>
-);
-const DeleteIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-    </svg>
-);
-const ShareIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 0-2.186m0 2.186c-.18.324-.283.696-.283 1.093s.103.77.283 1.093m0-2.186Zm-9.566-5.314a2.25 2.25 0 1 0 0-2.186m0 2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186Z" />
-    </svg>
-);
+import { MoreVertIcon, BookmarkIcon, EditIcon, SaveIcon, DeleteIcon, ShareIcon } from '../utility/icons';
 
 
 export interface ProjectCardProps {
-  project: Project;
-  isSelected?: boolean;
-  onNavigateToElements: (project: Project) => void;
-  onEdit: (project: Project) => void;
-  onSetDefault: (projectId: string) => void;
-  onSave: (project: Project) => void;
-  onDelete: (projectId: string) => void;
-  onShare: (projectId: string) => void;
-  isDefault?: boolean;
+  project: Project; // The project data to display
+  isSelected?: boolean; // Whether this project is currently selected
+  onNavigateToElements: (project: Project) => void; // Callback to navigate to the project's elements
+  onEdit: (project: Project) => void; // Callback to edit the project
+  onSetDefault: (projectId: string) => void; // Callback to set project as default
+  onSave: (project: Project) => void; // Callback to save the project
+  onDelete: (projectId: string) => void; // Callback to delete the project
+  onShare: (projectId: string) => void; // Callback to share the project
+  isDefault?: boolean; // Whether this project is the default
 }
 
 export const ProjectCard: React.FC<ProjectCardProps> = ({
@@ -57,42 +26,45 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   onShare,
   isDefault = false,
 }) => {
-  // Action bar (anchored bottom) — no dropdown state required
-
+  // Event handlers for action buttons
   const handleSetDefault = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent card click
     onSetDefault(project.id);
   };
 
   const handleEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent card click
     onEdit(project);
   };
 
   const handleSave = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent card click
     onSave(project);
   };
 
   const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent card click
     onDelete(project.id);
   };
 
   const handleShare = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent card click
     onShare(project.id);
   };
 
+  // Handler for card click to navigate to elements
   const handleCardClick = () => {
     onNavigateToElements(project);
   };
 
   return (
+    // Main card container with hover and selection styling
     <div
       className={`card card-compact bg-base-100 shadow-md hover:shadow-lg transition-shadow border ${isSelected ? 'border-primary' : 'border-base-300'} cursor-pointer p-4 rounded-lg relative pb-12`}
       onClick={handleCardClick}
+      title="click for elements and double click for Project Description" // Tooltip for user guidance
     >
+      {/* Project information section */}
       <div className="flex justify-between items-start">
         <div className="flex-grow pr-4">
           <h3 className="font-bold text-lg mb-1">{project.name}</h3>
@@ -103,7 +75,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           <p className="text-xs text-base-content/50">{project.elementCount} elements</p>
         </div>
         
-        {/* Anchored bottom icon action bar (Option B) */}
+        {/* Action buttons bar anchored at bottom */}
         <div className="absolute left-0 right-0 bottom-0 px-3 pb-3 flex justify-center pointer-events-none">
           <div className="w-full max-w-md flex gap-2 overflow-x-auto justify-center bg-base-200/60 rounded-md px-2 py-1 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
             <button title={isDefault ? 'Default Project' : 'Set as Default'} onClick={handleSetDefault} className={`btn btn-ghost btn-xs btn-circle ${isDefault ? 'text-primary' : ''}`} aria-label="set-default">
