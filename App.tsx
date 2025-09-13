@@ -22,6 +22,7 @@ import { auth } from './config/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { ProjectsDrawer } from './components/projects/ProjectsDrawer';
 import { ConfirmDeleteModal } from './components/utility/ConfirmDeleteModal';
+import { UserProfileModal } from './components/auth/UserProfile';
 
 
 const MAX_HISTORY_STATES = 30;
@@ -67,6 +68,9 @@ const App: React.FC = () => {
   // State for delete confirmation modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<StructuralElement | null>(null);
+  //User profile
+  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
+  
   //#endregion
 
 
@@ -1145,7 +1149,11 @@ const App: React.FC = () => {
   //#region --- Render ---
   return (
     <>
-      <UploadDrawingModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} onSubmit={handleDrawingAnalysis} />
+      <UploadDrawingModal isOpen={isUploadModalOpen} 
+        onClose={() => setIsUploadModalOpen(false)} 
+        onSubmit={handleDrawingAnalysis} 
+      />
+
       <ManageSectionsModal 
         isOpen={isSectionsModalOpen}
         onClose={() => setIsSectionsModalOpen(false)}
@@ -1159,6 +1167,12 @@ const App: React.FC = () => {
         elementName={elementToDelete?.name || ''}
         onConfirm={confirmElementDelete}
         onCancel={() => setIsDeleteModalOpen(false)}
+      />
+
+      <UserProfileModal
+        isOpen={isUserProfileModalOpen}
+        onClose={() => setIsUserProfileModalOpen(false)}
+         
       />
 
       <div className={`flex h-screen bg-base-200 font-sans overflow-hidden transition-all duration-300`}>
@@ -1185,19 +1199,33 @@ const App: React.FC = () => {
                     <p>Database Server is down <code>Dtabase Error</code> file.</p>
                 </div>
             )}
+          
+          {/* App Bar  */}
           <header className="flex-shrink-0 bg-primary text-white shadow-md z-10">
             <div className="w-full px-4 py-2 flex items-center justify-between">
+              
+              {/* Header */}
               <div className="flex items-center">
                   <button onClick={() => setIsProjectsDrawerOpen(prev => !prev)} className="p-2 rounded-full hover:bg-black/20 transition-colors mr-2" title="Toggle Projects">
                     <FolderIcon className="w-6 h-6" />
                   </button>
                   <h1 className="text-xl font-bold">RosarcLABs</h1>
               </div>
+
+              {/* Left side of App bar */}
               <div className="flex items-center gap-4">
-                <SignIn user={user} onAuthStateChange={setUser} />
+
+                {/* Sign In Component */}
+                <SignIn 
+                  user={user} 
+                  onAuthStateChange={setUser} 
+                  onViewProfile={() => setIsUserProfileModalOpen(true)} />
+
+                {/* Toggle Canvas Button */}
                 <button onClick={() => setIsCanvasOpen(prev => !prev)} className="p-2 rounded-full hover:bg-black/20 transition-colors" title={isCanvasOpen ? "Close Canvas" : "Open Canvas"}>
                     {isCanvasOpen ? <PanelLeftCloseIcon className="w-6 h-6" /> : <PanelRightOpenIcon className="w-6 h-6" />}
                 </button>
+
               </div>
             </div>
           </header>

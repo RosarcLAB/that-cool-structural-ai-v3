@@ -6,9 +6,11 @@ import { GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, User } fro
 interface SignInProps {
   user: User | null;
   onAuthStateChange: (user: User | null) => void;
+  onViewProfile: () => void;       // ← add this
+
 }
 
-const SignIn: React.FC<SignInProps> = ({ user, onAuthStateChange }) => {
+const SignIn: React.FC<SignInProps> = ({ user, onAuthStateChange, onViewProfile }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -83,6 +85,11 @@ const SignIn: React.FC<SignInProps> = ({ user, onAuthStateChange }) => {
     }
   };
 
+  const handleViewProfile = () => {
+         onViewProfile();     
+
+  }
+
   const getUserIcon = (user: User) => {
     // Check provider data to determine the icon
     const providerId = user.providerData?.[0]?.providerId;
@@ -123,6 +130,8 @@ const SignIn: React.FC<SignInProps> = ({ user, onAuthStateChange }) => {
   };
 
   if (user) {
+    
+
     return (
       <div className="relative" ref={dropdownRef}>
         <button
@@ -149,16 +158,27 @@ const SignIn: React.FC<SignInProps> = ({ user, onAuthStateChange }) => {
 
         {showDropdown && (
           <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+             <button
+              onClick={() => {
+                handleViewProfile();
+                setShowDropdown(false);
+              }}
+              className="w-full text-left px-4 py-2 text-sm text-green-800 hover:bg-green-50 transition-colors rounded-lg"
+              disabled={loading}
+            >
+              View Profile
+            </button>
             <button
               onClick={() => {
                 handleSignOut();
                 setShowDropdown(false);
               }}
-              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-lg"
+              className="w-full text-left px-4 py-2 text-sm text-green-800 hover:bg-green-50 transition-colors rounded-lg"
               disabled={loading}
             >
               Sign Out
             </button>
+           
           </div>
         )}
       </div>
@@ -171,7 +191,7 @@ const SignIn: React.FC<SignInProps> = ({ user, onAuthStateChange }) => {
       {!user && (
         <button
           onClick={() => setShowSignInModal(true)}
-          className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-focus rounded-lg transition-colors"
+          className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-white/20 rounded-lg transition-colors duration-200"
         >
           Sign In
         </button>

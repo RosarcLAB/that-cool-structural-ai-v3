@@ -62,7 +62,7 @@ export const ElementCard: React.FC<ElementCardProps> = ({
       <div className="flex justify-between items-start"> 
         {/* Element information section */}
         <div className="card-body px-4 py-2">
-          <h3 className="card-title font-bold text-sm mb-2 truncate">{element.name}</h3>
+          <h3 className="card-title font-bold text-sm mb-2 truncate ">{element.name}</h3>
           <div className="space-y-1">
             <Badge icon={SpanDimensionIcon} color="border-blue-400" text={`${element.span} m`} tooltip="Span" />
             <Badge icon={ArrowsRightLeftIcon} color="border-green-400" text={`${element.spacing} m`} tooltip="Spacing" />

@@ -4,6 +4,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { StandardLoadsProvider } from './contexts/StandardLoadsContext';
+import { AuthProvider } from './contexts/AuthContext';
 
 // Find the root DOM element where the React app will be mounted.
 const rootElement = document.getElementById('root');
@@ -14,9 +15,11 @@ if (!rootElement) {
 // Create a React root and render the main App component.
 const root = ReactDOM.createRoot(rootElement);
 root.render(
-  <React.StrictMode>
-    <StandardLoadsProvider>
-      <App />
-    </StandardLoadsProvider>
-  </React.StrictMode>
+    <React.StrictMode>
+      <StandardLoadsProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </StandardLoadsProvider>
+    </React.StrictMode>
 );
