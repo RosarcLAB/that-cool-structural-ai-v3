@@ -68,7 +68,7 @@ class ProjectTransferRegistry {
     sourceEl: any,
     supportIndex: number,
     targetEl: any,
-    mapPosToTarget: (pos: number | string) => string
+    mapPosToTarget: (pos: number | string) => number
   ) {
     if (!sourceEl?.id || !targetEl?.id) throw new Error('Both source and target must be saved');
     if (!sourceEl.projectId || !targetEl.projectId) throw new Error('Both elements must belong to a project');
@@ -77,7 +77,7 @@ class ProjectTransferRegistry {
     const support = sourceEl.supports?.[supportIndex];
     if (!support) throw new Error('Support not found');
 
-    const verticalN = (support.reaction?.Fy?.forces[0]?.magnitude[0] ?? 0);
+    //const verticalN = (support.reaction?.Fy?.forces[0]?.magnitude[0] ?? 0);
     const groupId = uuidv4();
     const meta: TransferMeta = {
       transferGroupId: groupId,
@@ -87,22 +87,45 @@ class ProjectTransferRegistry {
       canonicalOwnerId: sourceEl.id,
     };
 
-    const posOnTarget = mapPosToTarget(support.position ?? 0);
+    const posOnTarget = mapPosToTarget(sourceEl.span  ?? 0);
 
-    // Build forces: include Dead with the transfer magnitude and Live with 0 so UI shows both cases
+    // Grab all Fy reaction forces. Future implement Fx and Mz
+    const reactionForces = support.reaction?.Fy?.forces || [];
+
+    // Build dynamic forces array from reaction forces
+    const canonicalForces: SyncedForce[] = [];
+    reactionForces.forEach(f => {
+      canonicalForces.push({
+        magnitude: f.magnitude,
+        loadCase: f.loadCase
+      });
+    });
+
     const canonical: SyncedAppliedLoad = {
       id: `t-${groupId}`,
-      type: (LoadType.PointLoad as any),
-      position: [String(posOnTarget)],
-      forces: [
-        { magnitude: [verticalN || 0], loadCase: (LoadCaseType.Dead as any) },
-        { magnitude: [0], loadCase: (LoadCaseType.Live as any) }
-      ],
+      type: support.type,
+      position: [String(posOnTarget/2)],
+      forces: canonicalForces,
       transfer: meta
     };
 
-    this.createOrInit(canonical);
+    // Do not auto-register here; registry call deferred until save
+    // this.createOrInit(canonical);
     return canonical;
+  }
+
+  /**
+   * Register or update a transfer load in the registry.
+   * Should be called once when the transferee element is saved.
+   */
+  commitTransferLoad(canonical: SyncedAppliedLoad) {
+    const { projectId, transferGroupId } = canonical.transfer!;
+    const existing = this.get(projectId, transferGroupId);
+    if (existing) {
+      this.update(projectId, transferGroupId, canonical);
+    } else {
+      this.createOrInit(canonical);
+    }
   }
 }
 

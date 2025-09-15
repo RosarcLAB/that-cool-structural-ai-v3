@@ -23,6 +23,7 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { ProjectsDrawer } from './components/projects/ProjectsDrawer';
 import { ConfirmDeleteModal } from './components/utility/ConfirmDeleteModal';
 import { UserProfileModal } from './components/auth/UserProfile';
+import { projectTransferRegistry } from './services/projectTransferRegistry';
 
 
 const MAX_HISTORY_STATES = 30;
@@ -381,7 +382,7 @@ const App: React.FC = () => {
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error('Analysis and design failed:', error);
+        console.error('Analysis and design failed', error);
         setMessages(prev => prev.map(msg => msg.id === messageId ? { ...msg, statusMessage: { type: 'error', message: `Design Failed: ${errorMessage}`, timestamp: new Date().toLocaleTimeString() } } : msg));
       }
   
@@ -392,9 +393,9 @@ const App: React.FC = () => {
      * @param messageId - The ID of the message containing the form.
      * @param formIndex - The index of the form within the message.
      */
-  const handleElementFormCancel = useCallback((messageId: string, formIndex: number) => {
-      deactivateFormInMessage(messageId, formIndex);
-  }, [deactivateFormInMessage]);
+    const handleElementFormCancel = useCallback((messageId: string, formIndex: number) => {
+        deactivateFormInMessage(messageId, formIndex);
+    }, [deactivateFormInMessage]);
 
   /** Handles saving the structural element to the database.
    * Implements optimistic UI updates and error handling.
@@ -439,6 +440,10 @@ const App: React.FC = () => {
 
         // 4) call service upsert
         const savedId = await projectService.upsertElement(projectId, elementToSave);
+        // commit any transfer loads to the registry
+        elementToSave.appliedLoads
+          .filter(load => (load as any).transfer)
+          .forEach(load => projectTransferRegistry.commitTransferLoad(load as any));
 
         // 5) Update local projects state: replace or append element with server id
         setProjects(prev => prev.map(p => {
@@ -1045,6 +1050,10 @@ const App: React.FC = () => {
 
       // Call service upsert
       const savedId = await projectService.upsertElement(projectId, elementToSave);
+      // commit any transfer loads to the registry
+      elementToSave.appliedLoads
+        .filter(load => (load as any).transfer)
+        .forEach(load => projectTransferRegistry.commitTransferLoad(load as any));
 
       // Update local projects state
       setProjects(prev => prev.map(p => {

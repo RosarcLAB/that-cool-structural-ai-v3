@@ -339,11 +339,16 @@ export function transformElementToDesignAPI(element: StructuralElement, combinat
   };
 }
 
-// Design a structural element for a specific load combination
+/** 
+ * Call API service to Design a structural element for a specific load combination
+ * @param element - The structural element to be designed.
+ * @param combination - The load combination to use for the design.
+ * @returns A promise that resolves to the design output from the API.
+ */
 export async function designStructuralElement(element: StructuralElement, combination: LoadCombination): Promise<DesignOutput> {
   const apiPayload = transformElementToDesignAPI(element, combination);
   
-  console.log("Design payload sent to API:", JSON.stringify(apiPayload, null, 2));
+  //console.log("Design payload sent to API:", JSON.stringify(apiPayload, null, 2));
   
   const res = await fetch(`${STRUCTURAL_SERVICES_URL}/element`, {
     method: 'POST',
@@ -357,7 +362,7 @@ export async function designStructuralElement(element: StructuralElement, combin
   }
   
   const data = await res.json();
-  console.log("Design API response:", JSON.stringify(data, null, 2));
+  //console.log("Design API response:", JSON.stringify(data, null, 2));
   
   // Add combination name to result for tracking
   return {
@@ -370,7 +375,7 @@ export async function designStructuralElement(element: StructuralElement, combin
   } as DesignOutput;
 }
 
-// Phase 3: Map reactions from DesignOutput to Support.reaction as AppliedLoads
+// Map reactions from DesignOutput to Support.reaction as AppliedLoads
 function mapReactionsToSupports(
   element: StructuralElement, 
   designOutput: DesignOutput,
@@ -394,7 +399,7 @@ function mapReactionsToSupports(
     );
     
     if (supportIndex !== -1) {
-      const [fx, fy, mz] = forces;
+      //const [fx, fy, mz] = forces;
       
       // Get or initialize existing reaction
       const existingReaction = updatedElement.supports[supportIndex].reaction || {};
@@ -437,7 +442,10 @@ function mapReactionsToSupports(
   return updatedElement;
 }
 
-// Design all load combinations for an element
+/** Design all load combinations for an element 
+ * @param element - The structural element to be designed.
+ * @returns A promise that resolves to an array of design outputs and the updated element with reactions mapped.
+ */
 export async function designAllCombinations(element: StructuralElement): Promise<{
   results: DesignOutput[];
   updatedElement: StructuralElement;
@@ -449,19 +457,20 @@ export async function designAllCombinations(element: StructuralElement): Promise
   const results: DesignOutput[] = [];
   let updatedElement = { ...element }; // Track updated element
   
-  // Import combination utils for computing results
+  // 1. Import combination utils for computing results
   const { LoadCombinationUtils } = await import('../customTypes/structuralElement');
   const combinationUtils = new LoadCombinationUtils();
   
+  // 2. Iterate through each load combination and then design them
   for (const combination of element.loadCombinations) {
-    // Skip inactive combinations
+    // 1. Skip inactive combinations
     if (combination.isActive === false) {
       continue;
     }
-    
+    // Use computed results of the combination if available
     let computedResult = combination.computedResult;
     
-    // If no computed result exists, compute it now (this handles reaction combinations)
+    // 2. If no computed result exists, compute it now (this handles reaction combinations)
     if (!computedResult || computedResult.length === 0) {
       try {
         computedResult = combinationUtils.computeLoadCombination(updatedElement.appliedLoads || [], combination);
@@ -471,14 +480,16 @@ export async function designAllCombinations(element: StructuralElement): Promise
       }
     }
     
-    // Only proceed if we have valid computed results
+    // 3. Only proceed if we have valid computed results
     if (computedResult && computedResult.length > 0) {
       try {
-        // Create a combination object with computed results for design
+        // Task 1: Create a combination object with computed results for design
         const combinationWithResults = { ...combination, computedResult };
+
+        // Task 2: Call design API for this combination
         const result = await designStructuralElement(updatedElement, combinationWithResults);
         
-        // Phase 4: Map reactions back to element supports
+        // Task 3: Map reactions back to element supports
         updatedElement = mapReactionsToSupports(updatedElement, result, combinationWithResults);
         
         results.push(result);
@@ -494,20 +505,5 @@ export async function designAllCombinations(element: StructuralElement): Promise
   return { results, updatedElement };
 }
 
-// Save element to database (placeholder - implement based on your backend)
-export async function saveStructuralElement(element: StructuralElement): Promise<void> {
-  // Implement save functionality based on your backend API
-  console.log("Saving element:", element.name);
-  
-  // Example implementation:
-  // const res = await fetch(`${STRUCTURAL_SERVICES_URL}/elements`, {
-  //   method: 'POST', 
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(element),
-  // });
-  // 
-  // if (!res.ok) {
-  //   throw new Error(`Save failed: ${res.status}`);
-  // }
-}
+
 //#endregion

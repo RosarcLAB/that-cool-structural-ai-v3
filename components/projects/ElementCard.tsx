@@ -42,6 +42,7 @@ export const ElementCard: React.FC<ElementCardProps> = ({
   // Event handlers for card and action buttons
   const handleCardClick = () => {
     onClick(element);
+    console.log('Element clicked:', element)
   };
 
   const handleEdit = (e: React.MouseEvent) => { e.stopPropagation(); onEdit?.(element); };

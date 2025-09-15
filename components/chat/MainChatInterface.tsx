@@ -249,7 +249,7 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                     {/** Action buttons first line - only show when authenticated */}
                     {user && (
                     <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={handleAddBeamClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <AddIcon className="w-4 h-4" /> New Beam </button>
+                        <button onClick={handleAddBeamClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <AddIcon className="w-4 h-4" /> Quick Analysis </button>
                         <button onClick={handleAddElementClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <BuildingBlockIcon className="w-4 h-4" /> New Element </button>
                         <button onClick={() => setIsUploadModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <DocumentMagnifyingGlassIcon className="w-4 h-4" /> Analyze Drawing </button>
                         <button

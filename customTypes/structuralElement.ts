@@ -426,6 +426,30 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
       missingIndividualCombinations
     };
   }
+    /**
+     * Generate applied point loads for a transferee element based on this element's reaction combinations.
+     * @param element The source element whose reactions transfer to the transferee.
+     * @param transfereeSpan Span of the transferee element (for default position midpoint).
+     * @returns Array of AppliedLoads representing transferred point loads.
+     */
+    public generateTransferLoads(element: Element, transfereeSpan: number = element.span): AppliedLoads[] {
+      // mid-span position as string
+      const pos = String(transfereeSpan / 2);
+      // get individual reaction combinations (one per load case)
+      const indiv = this.getIndividualCombinations(element);
+      // for each reaction combo, compute actual reaction forces and build a point-load
+      return indiv.map(combo => {
+        // compute combination loads from existing appliedLoads
+        const loads = this.computeLoadCombination(element.appliedLoads, combo);
+        // build AppliedLoads with point load at mid-span
+        return {
+          type: LoadType.PointLoad,
+          position: [pos],
+          forces: loads.map(l => ({ magnitude: l.magnitude, loadCase: combo.loadCaseFactors[0].loadCaseType })),
+          description: `Transfer of ${combo.name} from ${element.name}`
+        };  
+      });
+    }
 }
 // Represents all the input parameters for a single beam analysis.
 export interface BeamInput {

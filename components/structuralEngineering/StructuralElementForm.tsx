@@ -10,6 +10,7 @@ import { Project } from '../../customTypes/types';
 import { DesignResultsDisplay } from './DesignResultsDisplay';
 import { projectTransferRegistry } from '../../services/projectTransferRegistry';
 import { projectService } from '../../services/projectService';
+import { designAllCombinations } from '../../services/analysisService';
  
  
  
@@ -261,7 +262,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     /**
      * This function handles the form submission. i.e. Beam Analysis and Design
      */
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         // First, recompute all load combinations with current applied loads to ensure freshest data
         const updatedElement = recomputeAllLoadCombinations(element);
         
@@ -280,14 +281,20 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
      */
     const handleSave = async () => {
         try {
+            // Perform save via parent
             await onSave(element);
-            // Only set isSaved to true after successful save
-            // The parent component will update the elementData with isSaved: true
-            // which will trigger the useEffect to update our local state
-            
-             
+            // Re-fetch from backend to include any reaction data
+            if (element.projectId && element.id) {
+                try {
+                    const fresh = await projectService.getElement(element.projectId, element.id);
+                    setElement(fresh);
+                } catch (fetchErr) {
+                    console.warn('Failed to reload element after save:', fetchErr);
+                }
+            }
+            // Mark as saved
+            setIsSaved(true);
         } catch (error) {
-            // Handle save errors if needed
             console.error('Save failed:', error);
         }
     };
@@ -1449,18 +1456,34 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                         ))}
                                     </select>
 
-                                    <button type="button" onClick={async () => {
-                                        try {
-                                            if (!reactionSourceElementId || reactionSourceSupportIndex === '') return;
-                                            const src = candidateElements.find(p => p.id === reactionSourceElementId);
-                                            if (!src) return;
-                                            const canonical = projectTransferRegistry.createPointLoadFromReaction(src, reactionSourceSupportIndex as number, element, (pos) => String(pos));
-                                            // append canonical to local element appliedLoads
-                                            setElement(prev => ({ ...prev, appliedLoads: [...prev.appliedLoads, canonical as any] }));
-                                        } catch (err) {
-                                            console.error('Transfer failed', err);
-                                        }
-                                    }} className="btn-add">Transfer</button>
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            try {
+                                                if (!reactionSourceElementId || reactionSourceSupportIndex === '') return;
+                                                const src = candidateElements.find(p => p.id === reactionSourceElementId);
+                                                if (!src) return;
+                                                const canonical = projectTransferRegistry.createPointLoadFromReaction(
+                                                    src,
+                                                    reactionSourceSupportIndex as number,
+                                                    element,
+                                                    (pos) => Number(pos)
+                                                );
+                                                // Deduplicate prior to adding
+                                                setElement(prev => {
+                                                    const filtered = prev.appliedLoads.filter(
+                                                        load => (load as any).transfer?.transferGroupId !== canonical.transfer?.transferGroupId
+                                                    );
+                                                    return { ...prev, appliedLoads: [...filtered, canonical as any] };
+                                                });
+                                            } catch (err) {
+                                                console.error('Transfer failed', err);
+                                            }
+                                        }}
+                                        className="btn-add"
+                                    >
+                                        Transfer
+                                    </button>
                                 </div>
                             ) : (
                                 <button type="button" onClick={addAppliedLoad} className="w-full flex items-center justify-center gap-2 text-sm font-semibold p-2 border-2 border-dashed border-gray-300 rounded-lg text-teal-700 hover:border-teal-500 hover:bg-teal-50"><AddIcon className="w-5 h-5"/> Add Applied Load</button>
@@ -1600,15 +1623,17 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     )}
                     <button
                         type="button"
-                        onClick={addCombination}
-                        className="w-full mt-2 flex items-center justify-center gap-2 text-sm font-semibold p-2 border-2 border-dashed border-gray-300 rounded-lg text-violet-700 hover:border-violet-500 hover:bg-violet-50"
+                        onClick={() => {
+                            setElement(prev => ({ ...prev, loadCombinations: [...prev.loadCombinations, { name: '', combinationType: 'Ultimate', loadCaseFactors: [] }] }));
+                        }}
+                        className="w-full flex items-center justify-center gap-2 text-sm font-semibold p-2 border-2 border-dashed border-gray-300 rounded-lg text-violet-700 hover:border-violet-500 hover:bg-violet-50"
                     >
                         <AddIcon className="w-5 h-5"/> Add Load Combination
                     </button>
                 </div>
             </FormCollapsibleSectionWithStagedSummary>
 
-             {/* Design Results Display */}
+            {/* Design Results Display */}
             {element.designResults && element.designResults.length > 0 && (
                 <DesignResultsDisplay 
                     results={element.designResults} 
