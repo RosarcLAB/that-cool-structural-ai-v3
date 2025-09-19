@@ -9,7 +9,7 @@ import { BeamAnalysisDisplay, type BeamAnalysisDisplayHandle } from '../structur
 // FIX: Changed to default import as StructuralElementForm is now a default export.
 import StructuralElementForm from '../structuralEngineering/StructuralElementForm';
 import { Spinner } from '../utility/Spinner';
-import { SendIcon, UploadIcon, AddIcon, DocumentMagnifyingGlassIcon, PanelRightOpenIcon, ChatBubbleLeftRightIcon, MicrophoneIcon, CloseIcon, BuildingBlockIcon, ListBulletIcon, PinIcon } from '../utility/icons';
+import { SendIcon, UploadIcon, AddIcon, DocumentMagnifyingGlassIcon, PanelRightOpenIcon, ChatBubbleLeftRightIcon, MicrophoneIcon, CloseIcon, BuildingBlockIcon, ListBulletIcon, PinIcon, OfficePinIcon } from '../utility/icons';
 
 // HACK: Add barebones type for SpeechRecognition to fix build error.
 interface SpeechRecognition {
@@ -57,7 +57,8 @@ interface MainChatInterfaceProps {
     analysisDisplayRefs: React.MutableRefObject<Record<string, BeamAnalysisDisplayHandle | null>>;
     handleUndo: () => void;
     handleActionClick: (messageId: string, action: Action) => void;
-}
+    /** Batch print all element forms */
+ }
 
 // Helper function to parse message text and render special links (like Undo) as buttons.
 const renderMessageText = (text: string, handleUndo: () => void) => {
@@ -82,7 +83,7 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
     messages, isLoading, userInput, setUserInput, fileToUpload, setFileToUpload,
     context, setContext, handleSendMessage, handleAddBeamClick, handleAddElementClick, setIsUploadModalOpen,
     handleOpenSectionsModal, isPersistenceEnabled, handleFileChange, handleFormChange, handleFormSubmit, handleFormCancel,
-    handleAddToCanvas, analysisDisplayRefs, handleUndo, handleActionClick,
+    handleAddToCanvas, analysisDisplayRefs, handleUndo, handleActionClick, 
     handleElementFormChange, handleElementFormSubmit, handleElementFormCancel, handleElementFormSave,
     sections, user, projects
 }) => {
@@ -118,127 +119,255 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
         recognition.start();
     };
 
+    //#region Form actions
+    
+   
+    // Batch conditions for showing form action chips
+    // Use explicit counts so empty arrays don't incorrectly evaluate as "present".
+    const beamInputFormsCount = messages.reduce((count, m) => {
+        if (m.type === 'beam_input_form' && Array.isArray(m.beamInputsData) && Array.isArray(m.isFormActive)) {
+            // Count only forms still active (not cancelled)
+            return count + m.beamInputsData.filter((_, idx) => m.isFormActive![idx]).length;
+        }
+        return count;
+    }, 0);
+
+    const elementFormsCount = messages.reduce((count, m) => {
+        if (m.type === 'element_form' && Array.isArray(m.elementData) && Array.isArray(m.isFormActive)) {
+            // Count only element forms still active
+            return count + m.elementData.filter((_, idx) => m.isFormActive![idx]).length;
+        }
+        return count;
+    }, 0);
+
+    const beamOutputCount = messages.reduce((count, m) => {
+        return (m.type === 'beam_output_display' && m.beamOutputData && Array.isArray(m.beamInputsData) && m.beamInputsData.length > 0)
+            ? count + 1
+            : count;
+    }, 0);
+
+    // Backwards-compatible booleans
+    const hasBeamInputForm = beamInputFormsCount > 0;
+    const hasElementForm = elementFormsCount > 0;
+    // Build set of active beam names (forms still live)
+    const activeBeamNames = new Set<string>();
+    messages.forEach(msg => {
+        if (msg.type === 'beam_input_form' && Array.isArray(msg.beamInputsData) && Array.isArray(msg.isFormActive)) {
+            msg.beamInputsData.forEach((data, idx) => {
+                if (msg.isFormActive![idx]) activeBeamNames.add(data.Name);
+            });
+        }
+    });
+    const hasBeamOutput = messages.some(msg =>
+        msg.type === 'beam_output_display'
+        // && msg.beamInputsData?.[0]
+        // && activeBeamNames.has(msg.beamInputsData[0].Name)
+    );
+
+    // Glow state for Download All (pulse for 4s)
+    const [downloadGlowing, setDownloadGlowing] = useState(false);
+    useEffect((count = 4000) => {
+        if (hasBeamOutput) {
+            setDownloadGlowing(true);
+            const timer = setTimeout(() => setDownloadGlowing(false), count);
+            return () => clearTimeout(timer);
+        }
+    }, [hasBeamOutput]);
+    // Glow state for Analyse/Design All (pulse for 4s)
+    const [analyseGlowing, setAnalyseGlowing] = useState(false);
+    useEffect((count = 4000) => {
+        if (hasBeamInputForm || hasElementForm) {
+            setAnalyseGlowing(true);
+            const timer = setTimeout(() => setAnalyseGlowing(false), count);
+            return () => clearTimeout(timer);
+        }
+    }, [hasBeamInputForm, hasElementForm]);
+
+    
+    // Handlers for form actions - Download All, Analyse All
+    // Batch Form Action handlers
+    /**
+     * Analyze all beam input forms in the chat by submitting each form.
+     */
+    const analyseDesignAll = () => {
+        messages.forEach(msg => {
+            if (msg.type === 'beam_input_form' && Array.isArray(msg.beamInputsData) && Array.isArray(msg.isFormActive)) {
+                msg.beamInputsData.forEach((data, i) => {
+                    if (msg.isFormActive![i]) {
+                        void handleFormSubmit(data, msg.id, i);
+                    }
+                });
+            }
+            if (msg.type === 'element_form' && Array.isArray(msg.elementData) && Array.isArray(msg.isFormActive)) {
+                msg.elementData.forEach((data, i) => {
+                    if (msg.isFormActive![i]) {
+                        void handleElementFormSubmit(data, msg.id, i);
+                    }
+                });
+            }
+        });
+    };
+
+    /**
+     * Download all beam output displays in the chat.
+     */
+    const downloadAll = () => {
+        messages.forEach(msg => {
+            if (
+                msg.type === 'beam_output_display'
+                && msg.beamInputsData?.[0]
+                && activeBeamNames.has(msg.beamInputsData[0].Name)
+            ) {
+                const beamName = msg.beamInputsData[0].Name;
+                analysisDisplayRefs.current[beamName]?.downloadPdf?.();
+            }
+        });
+    };
+    //#endregion
+
     return (
         <>  
             {/** Chat messages render*/}
             <main className="flex-grow container mx-auto p-4 overflow-y-auto flex flex-col">
                 <div className="flex-grow space-y-4">
-                {messages.map((msg) => (
-                    <div key={msg.id} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    {msg.sender === 'ai' && <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">R</div>}
-                    
-                    <div className={`relative group max-w-2xl p-4 rounded-2xl ${msg.sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-base-100 text-gray-800 rounded-bl-none'} ${msg.type.endsWith('_form') || msg.type.endsWith('display') ? 'w-full' : ''}`}>
-                        
-                        {msg.text && ( <div className="mb-2">{renderMessageText(msg.text, handleUndo)}</div> )}
+                    {messages.map((msg) => (
 
-                        {/* Interactive Action Buttons */}
-                        {msg.actions && !msg.actionsConsumed && (
-                            <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-3">
-                                {msg.actions.map((action, index) => {
-                                    if (action.type === 'confirm_attachment_analysis') {
-                                        return <button key={index} onClick={() => handleActionClick(msg.id, action)} className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-focus transition-colors text-sm">Proceed</button>;
-                                    }
-                                    if (action.type === 'cancel_attachment_analysis') {
-                                        return <button key={index} onClick={() => handleActionClick(msg.id, action)} className="px-4 py-2 bg-gray-200 text-neutral font-semibold rounded-lg hover:bg-gray-300 transition-colors text-sm">Cancel</button>;
-                                    }
-                                    return null;
-                                })}
-                            </div>
-                        )}
+                        <div key={msg.id} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                         
-                        {msg.type === 'beam_input_form' && msg.beamInputsData && (
-                        <div className="space-y-4">
-                            {msg.beamInputsData.map((beamInput, index) => (
-                            <div key={`${msg.id}-${index}`} className="relative group/form">
-                                <BeamInputForm initialData={beamInput} onChange={(data) => handleFormChange(msg.id, index, data)} isFormActive={!!msg.isFormActive?.[index]} onSubmit={(data) => handleFormSubmit(data, msg.id, index)} onCancel={() => handleFormCancel(msg.id, index)} />
-                                <button onClick={() => handleAddToCanvas(msg, index)} title="Pin to canvas" className="absolute -top-2 -right-2 p-1.5 rounded-full bg-white shadow-md hover:bg-gray-100 text-gray-600 opacity-0 group-hover/form:opacity-100 transition-opacity">
-                                    <PanelRightOpenIcon className="w-5 h-5" />
-                                </button>
-                            </div>
-                            ))}
-                        </div>
-                        )}
+                        {/* Avatar for AI sender */}
+                        {msg.sender === 'ai' && 
+                            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">R</div>
+                        }
                         
-                        {msg.type === 'element_form' && msg.elementData && (
+                        {/* Message Renders */}
+                        <div className={`relative group max-w-2xl p-4 rounded-2xl ${msg.sender === 'user' ? 'bg-accent text-white rounded-br-none' : 'bg-base-100 text-gray-800 rounded-bl-none'} ${msg.type.endsWith('_form') || msg.type.endsWith('display') ? 'w-full' : ''}`}>
+                            {/* This button renders where the Ai ask to undo a change */}
+                            {msg.text && ( 
+                                <div className="mb-2">{renderMessageText(msg.text, handleUndo)}</div> 
+                            )}
+
+                            {/* Interactive Action Buttons */}
+                            {msg.actions && !msg.actionsConsumed && (
+                                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center gap-3">
+                                    {msg.actions.map((action, index) => {
+                                        if (action.type === 'confirm_attachment_analysis') {
+                                            return <button key={index} onClick={() => handleActionClick(msg.id, action)} className="px-4 py-2 bg-primary text-white font-semibold rounded-lg hover:bg-primary-focus transition-colors text-sm">Proceed</button>;
+                                        }
+                                        if (action.type === 'cancel_attachment_analysis') {
+                                            return <button key={index} onClick={() => handleActionClick(msg.id, action)} className="px-4 py-2 bg-gray-200 text-neutral font-semibold rounded-lg hover:bg-gray-300 transition-colors text-sm">Cancel</button>;
+                                        }
+                                        return null;
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Beam Input Forms */}
+                            {msg.type === 'beam_input_form' && msg.beamInputsData && (
                             <div className="space-y-4">
-                                {msg.elementData.map((element, index) => (
-                                    <div key={`${msg.id}-${index}`} className="relative group/form">
-                                        <StructuralElementForm
-                                            elementData={element}
-                                            isFormActive={!!msg.isFormActive?.[index]}
-                                            onSubmit={(data) => handleElementFormSubmit(data, msg.id, index)}
-                                            onCancel={() => handleElementFormCancel(msg.id, index)}
-                                            onSave={(data) => handleElementFormSave(data, msg.id)}
-                                            statusMessage={msg.statusMessage || null}
-                                            sections={sections}
-                                            projectData={projects}
-                                            // Provide the list of elements for the element's project so the form can offer project-scoped candidates
-                                            elementDataList={projects.find(p => p.id === element.projectId)?.elements || []}
-                                            onPin={() => handleAddToCanvas(msg, index)}
-                                        />
-                                        {/* Floating Pin Button - Only show when form is active */}
-                                        {msg.isFormActive?.[index] && (
-                                            <button
-                                                onClick={() => handleAddToCanvas(msg, index)}
-                                                title="Pin to canvas"
-                                                style={{
-                                                    position: 'absolute',
-                                                    left: msg.sender === 'user' ? 'unset' : 12,
-                                                    right: msg.sender === 'user' ? 12 : 'unset',
-                                                    bottom: -28,
-                                                    backgroundColor: 'white',
-                                                    boxShadow: '0 4px 8px rgba(0,0,0,0.12)',
-                                                    color: 'red',
-                                                    border: '2px solid',
-                                                    borderColor: 'rgba(59,130,246,0.3)',
-                                                    padding: 8,
-                                                    zIndex: 2,
-                                                    borderRadius: '9999px',
-                                                    transition: 'background 0.2s, box-shadow 0.2s'
-                                                }}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style={{ width: 22, transform: 'rotate(-45deg)' }}>
-                                                    <path d="M12.707 2.293a1 1 0 00-1.414 0L9 4.586 5.707 7.879a1 1 0 00-.293.707V11a1 1 0 00.293.707l6 6a1 1 0 001.414 0l2.293-2.293L21 13.414a1 1 0 000-1.414l-8.293-8.293zM7.5 9.914L9 8.414 14.586 14 13.086 15.5 7.5 9.914z" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                    </div>
+                                {msg.beamInputsData.map((beamInput, index) => (
+                                <div key={`${msg.id}-${index}`} className="relative group/form">
+                                    <BeamInputForm 
+                                        initialData={beamInput} 
+                                        onChange={(data) => handleFormChange(msg.id, index, data)} 
+                                        isFormActive={!!msg.isFormActive?.[index]} 
+                                        onSubmit={(data) => handleFormSubmit(data, msg.id, index)} 
+                                        onCancel={() => handleFormCancel(msg.id, index)} />
+                                    <button onClick={() => handleAddToCanvas(msg, index)} 
+                                            title="Pin to canvas" 
+                                            className="absolute -top-2 -right-2 p-1.5 rounded-full bg-white shadow-md hover:bg-gray-100 text-gray-600 opacity-0 group-hover/form:opacity-100 transition-opacity">
+                                        <PanelRightOpenIcon className="w-5 h-5 text-red-500" />
+                                    </button>
+                                </div>
                                 ))}
                             </div>
-                        )}
+                            )}
 
+                            {/* Element Form */}
+                            {msg.type === 'element_form' && msg.elementData && (
+                                <div className="space-y-4">
+                                    {msg.elementData.map((element, index) => (
+                                        <div key={`${msg.id}-${index}`} className="relative group/form">
+                                            <StructuralElementForm
+                                                elementData={element}
+                                                isFormActive={!!msg.isFormActive?.[index]}
+                                                onChange={(data) => handleElementFormChange(msg.id, index, data)}
+                                                onSubmit={(data) => handleElementFormSubmit(data, msg.id, index)}
+                                                onCancel={() => handleElementFormCancel(msg.id, index)}
+                                                onSave={(data) => handleElementFormSave(data, msg.id)}
+                                                statusMessage={msg.statusMessage || null}
+                                                sections={sections}
+                                                projectData={projects}
+                                                // Provide the list of elements for the element's project so the form can offer project-scoped candidates
+                                                elementDataList={projects.find(p => p.id === element.projectId)?.elements || []}
+                                                onPin={() => handleAddToCanvas(msg, index)}
+                                            />
+                                            {/* Floating Pin Button - Only show when form is active */}
+                                            {msg.isFormActive?.[index] && (
+                                                <button
+                                                    onClick={() => handleAddToCanvas(msg, index)}
+                                                    title="Pin to canvas"
+                                                    style={{
+                                                        position: 'absolute',
+                                                        left: msg.sender === 'user' ? 'unset' : 12,
+                                                        right: msg.sender === 'user' ? 12 : 'unset',
+                                                        bottom: -28,
+                                                        backgroundColor: 'white',
+                                                        boxShadow: '0 4px 8px rgba(0,0,0,0.12)',
+                                                        color: 'red',
+                                                        border: '2px solid',
+                                                        borderColor: 'rgba(59,130,246,0.3)',
+                                                        padding: 8,
+                                                        zIndex: 2,
+                                                        borderRadius: '9999px',
+                                                        transition: 'background 0.2s, box-shadow 0.2s'
+                                                    }}
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style={{ width: 22, transform: 'rotate(-45deg)' }}>
+                                                        <path d="M12.707 2.293a1 1 0 00-1.414 0L9 4.586 5.707 7.879a1 1 0 00-.293.707V11a1 1 0 00.293.707l6 6a1 1 0 001.414 0l2.293-2.293L21 13.414a1 1 0 000-1.414l-8.293-8.293zM7.5 9.914L9 8.414 14.586 14 13.086 15.5 7.5 9.914z" />
+                                                    </svg>
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
 
-                        {msg.type === 'beam_output_display' && msg.beamOutputData && msg.beamInputsData?.[0] && (() => {
-                            const beamName = msg.beamInputsData[0].Name;
-                            return (
-                            <div className="relative group/form">
-                                <BeamAnalysisDisplay ref={(el: BeamAnalysisDisplayHandle | null) => { analysisDisplayRefs.current[beamName] = el; }} output={msg.beamOutputData} input={msg.beamInputsData[0]} />
-                                <button onClick={() => handleAddToCanvas(msg)} title="Pin to canvas" className="absolute top-2 right-2 p-1.5 rounded-full bg-white shadow-md hover:bg-gray-100 text-gray-600 opacity-0 group-hover/form:opacity-100 transition-opacity">
-                                    <PanelRightOpenIcon className="w-5 h-5" />
+                            {/* Beam Output Display */}
+                            {msg.type === 'beam_output_display' && msg.beamOutputData && msg.beamInputsData?.[0] && (() => {
+                                const beamName = msg.beamInputsData[0].Name;
+                                return (
+                                <div className="relative group/form">
+                                    <BeamAnalysisDisplay ref={(el: BeamAnalysisDisplayHandle | null) => { analysisDisplayRefs.current[beamName] = el; }} output={msg.beamOutputData} input={msg.beamInputsData[0]} />
+                                    <button onClick={() => handleAddToCanvas(msg)} title="Pin to canvas" className="absolute top-2 right-2 p-1.5 rounded-full bg-white shadow-md hover:bg-gray-100 text-gray-600 opacity-0 group-hover/form:opacity-100 transition-opacity">
+                                        <PanelRightOpenIcon className="w-5 h-5 text-red-500" />
+                                    </button>
+                                </div>
+                                );
+                            })()}
+
+                            {/* Normal Text */}
+                            {(msg.type === 'text' || msg.type === 'error') && !msg.actions && (
+                                <button onClick={() => handleAddToCanvas(msg)} title="Pin to canvas" className="absolute top-1 right-1 p-1 rounded-full bg-white/20 hover:bg-white/40 text-current opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <PanelRightOpenIcon className="w-5 h-5 text-red-500" />
                                 </button>
-                            </div>
-                            );
-                        })()}
+                            )}
+                        </div>
 
-                        {(msg.type === 'text' || msg.type === 'error') && !msg.actions && (
-                            <button onClick={() => handleAddToCanvas(msg)} title="Pin to canvas" className="absolute top-1 right-1 p-1 rounded-full bg-white/20 hover:bg-white/40 text-current opacity-0 group-hover:opacity-100 transition-opacity">
-                                <PanelRightOpenIcon className="w-4 h-4" />
-                            </button>
-                        )}
-                    </div>
+                        {msg.sender === 'user' && <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white font-bold text-lg flex-shrink-0">{user?.displayName.charAt(0) || 'U'}</div>}
+                        </div>
+                    ))}
+                    {isLoading && (
+                        <div className="flex items-end gap-2 justify-start">
+                            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">R</div>
+                            <div className="max-w-2xl p-4 rounded-2xl bg-base-100 text-gray-800 rounded-bl-none">
+                                <div className="flex items-center space-x-2"> <Spinner /> <span className="italic text-gray-500">AI is thinking...</span> </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div ref={messagesEndRef} />
+
                     
-                    {msg.sender === 'user' && <div className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white font-bold text-lg flex-shrink-0">U</div>}
-                    </div>
-                ))}
-                {isLoading && (
-                    <div className="flex items-end gap-2 justify-start">
-                    <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg flex-shrink-0">R</div>
-                    <div className="max-w-2xl p-4 rounded-2xl bg-base-100 text-gray-800 rounded-bl-none">
-                        <div className="flex items-center space-x-2"> <Spinner /> <span className="italic text-gray-500">AI is thinking...</span> </div>
-                    </div>
-                    </div>
-                )}
-                <div ref={messagesEndRef} />
                 </div>
             </main>
 
@@ -246,12 +375,22 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
             <footer className="flex-shrink-0 bg-base-100 border-t border-base-300 z-10">
                 <div className="container mx-auto p-4 space-y-3">
 
-                    {/** Action buttons first line - only show when authenticated */}
-                    {user && (
+                    {/** Action buttons first line - Quick Analysis stays visible; other actions are auth-gated */}
                     <div className="flex items-center gap-2 flex-wrap">
+                        {/* Quick Analysis : to open beamInputForm (always visible) */}
                         <button onClick={handleAddBeamClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <AddIcon className="w-4 h-4" /> Quick Analysis </button>
+
+                        {/* The rest behind the sign in wall */}
+                        {user && (
+                        <>
+                        
+                        {/* Element Button : to open StructuralElementForm */}
                         <button onClick={handleAddElementClick} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <BuildingBlockIcon className="w-4 h-4" /> New Element </button>
+                        
+                        {/* Upload Drawing Button : to open file input dialog */}
                         <button onClick={() => setIsUploadModalOpen(true)} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-neutral bg-base-200 hover:bg-base-300 rounded-full transition-colors"> <DocumentMagnifyingGlassIcon className="w-4 h-4" /> Analyze Drawing </button>
+                        
+                        {/* Manage Sections Button : to open sections modal */}
                         <button
                             onClick={handleOpenSectionsModal}
                             disabled={!isPersistenceEnabled}
@@ -260,6 +399,32 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                         >
                             <ListBulletIcon className="w-4 h-4" /> Manage Sections
                         </button>
+
+                        {/** Batch action chips */}
+                        {/* Show Analyse/Design All if there is at least one beam input form and one element form */}
+                        {(hasBeamInputForm || hasElementForm) && (
+                            <button
+                                className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-200 ${analyseGlowing ? 'animate-pulse' : ''}`}
+                                onClick={analyseDesignAll}
+                                style={{ boxShadow: '0 6px 18px rgba(59,130,246,0.12)' }}
+                            >
+                                Analyse/Design All
+                            </button>
+                        )}
+
+                        {/* Download All if there is at least one beam input form and one element form */}
+                        { hasBeamOutput && (
+                            <button
+                                className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-pink-700 bg-pink-50 hover:bg-pink-100 rounded-full transition-colors ${downloadGlowing ? 'animate-pulse' : ''}`}
+                                onClick={downloadAll}
+                                style={{ boxShadow: '0 6px 20px rgba(255,182,193,0.45)' }}
+                            >
+                                Download All
+                            </button>
+                        )}
+                            
+ 
+                        {/* Show attached file chip if there is a file */}
                         {fileToUpload && (
                             <div className="flex items-center gap-2 pl-3 pr-2 py-1.5 text-sm font-medium text-blue-800 bg-blue-100 rounded-full">
                                 <UploadIcon className="w-4 h-4 flex-shrink-0" />
@@ -267,8 +432,9 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                                 <button onClick={() => setFileToUpload(null)} className="p-1 rounded-full hover:bg-blue-200 transition-colors" aria-label="Remove attached file"> <CloseIcon className="w-4 h-4" /> </button>
                             </div>
                         )}
+                        </>
+                        )}
                     </div>
-                    )}
 
                     {/** Input area second line*/}
                     <div className="flex items-center gap-4">

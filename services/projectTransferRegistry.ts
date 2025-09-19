@@ -21,6 +21,8 @@ export type SyncedAppliedLoad = {
   position: string[];
   forces: SyncedForce[];
   transfer?: TransferMeta;
+  /** Optional description carried over from DB or UI */
+  description?: string;
 };
 
 class ProjectTransferRegistry {
@@ -103,9 +105,10 @@ class ProjectTransferRegistry {
 
     const canonical: SyncedAppliedLoad = {
       id: `t-${groupId}`,
-      type: support.type,
+      type: LoadType.PointLoad,
       position: [String(posOnTarget/2)],
       forces: canonicalForces,
+      description: `${sourceEl.name || 'Element'} (Fy) - support ${supportIndex + 1}  @ ${posOnTarget.toFixed(0)}mm`,
       transfer: meta
     };
 
@@ -122,6 +125,10 @@ class ProjectTransferRegistry {
     const { projectId, transferGroupId } = canonical.transfer!;
     const existing = this.get(projectId, transferGroupId);
     if (existing) {
+      // Preserve any existing description
+      if (existing.description && !canonical.description) {
+        canonical.description = existing.description;
+      }
       this.update(projectId, transferGroupId, canonical);
     } else {
       this.createOrInit(canonical);

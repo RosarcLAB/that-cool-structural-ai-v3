@@ -29,6 +29,7 @@ export class ProcessAiDecision {
             this.createElementFormMessage(decision.ElementForms, decision.chat_response);
             formCreated = true;
         }
+        
         // Handle BeamInput forms
         else if (decision.beamInputs && decision.beamInputs.length > 0) {
             this.createBeamInputFormMessage(decision.beamInputs, decision.chat_response);

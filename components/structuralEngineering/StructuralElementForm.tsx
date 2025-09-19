@@ -28,6 +28,7 @@ interface StructuralElementFormProps {
     onSubmit: (data: Element) => void;
     onCancel?: () => void;
     onSave: (data: Element) => Promise<void>;
+    onChange?: (data: Element) => void; // Optional: Makes the component "controlled" for live updates
     sections: SectionProperties[]; // Changed from sectionData to sections
     projectData?: Project[];
     wasCancelledProp?: boolean; // Let parent control cancel state
@@ -38,12 +39,28 @@ interface StructuralElementFormProps {
 const inputClasses = "block w-full rounded-md border border-gray-300 p-2 bg-white shadow-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-teal-200/50";
 const labelClasses = "block text-sm font-medium text-gray-700 mb-1";
 
-// FIX: Export the component to be used in other files.
 const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
-    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, sections, projectData, statusMessage, onPin }) => {
+    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, onChange, sections, projectData, statusMessage, onPin }) => {
+    
+    //#region Variables & Constants
     const [element, setElement] = useState<Element>(elementData);
     const [showResults, setShowResults] = useState<{[id: string]: boolean}>({});
     const [isSaved, setIsSaved] = useState<boolean>(elementData.isSaved || false);
+    
+    // A component is "controlled" if an `onChange` prop is provided.
+    const isControlled = onChange !== undefined;
+    
+    // Helper function to update element state and notify parent if controlled
+    const updateElement = (updater: (prev: Element) => Element) => {
+        setElement(prev => {
+            const newElement = updater(prev);
+            if (isControlled && onChange) {
+                onChange(newElement); // Propagate the change to the parent if controlled
+            }
+            return newElement;
+        });
+    };
+    
     // State for the custom combobox
     const [sectionSearchText, setSectionSearchText] = useState(element.sectionName || '');
     const [filteredSections, setFilteredSections] = useState<SectionProperties[]>([]);
@@ -62,6 +79,15 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     
     // Candidate source elements: saved elements in the same project (exclude self)
     const [fetchedCandidateElements, setFetchedCandidateElements] = useState<any[]>([]);
+    //#endregion
+
+
+
+
+
+    //#region Effect Hooks
+    
+    // Fetch project elements for transfer candidates
     useEffect(() => {
         let mounted = true;
         // If parent didn't pass an elementDataList, try fetching project elements for this element's project
@@ -118,7 +144,6 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
     
 
-    //#region Effect Hooks
     
    // Effect to enforce engineering rules (e.g., a single support must be fixed).
     useEffect(() => {
@@ -164,11 +189,65 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     }, [element.appliedLoads, element.loadCombinations]);
     
     // Update local element state when parent passes new elementData (e.g., with design results)
+    // Only sync specific properties to avoid overriding user changes
     useEffect(() => {
-        // Deep comparison to prevent infinite loops
-        if (JSON.stringify(elementData) !== JSON.stringify(element)) {
-            setElement(elementData);
-        }
+        setElement(prev => {
+            // Create a new element with selective updates
+            const updated = { ...prev };
+            
+            // Always sync design results from parent (these come from API responses)
+            if (elementData.designResults !== prev.designResults) {
+                updated.designResults = elementData.designResults;
+            }
+            
+            // Always sync saved state and IDs from parent
+            if (elementData.id !== prev.id) {
+                updated.id = elementData.id;
+            }
+            if (elementData.projectId !== prev.projectId) {
+                updated.projectId = elementData.projectId;
+            }
+            if (elementData.isSaved !== prev.isSaved) {
+                updated.isSaved = elementData.isSaved;
+            }
+            
+            // Only sync other properties if this is the initial load (when prev has default/empty values)
+            // or if the parent data is significantly different (like from AI actions)
+            const isInitialLoad = !prev.name || prev.name === elementData.name;
+            const hasStructuralChanges = elementData.appliedLoads?.length !== prev.appliedLoads?.length ||
+                                       elementData.loadCombinations?.length !== prev.loadCombinations?.length ||
+                                       elementData.supports?.length !== prev.supports?.length;
+            
+            if (isInitialLoad || hasStructuralChanges) {
+                // Sync structural properties from parent (AI changes, etc.)
+                if (elementData.appliedLoads && JSON.stringify(elementData.appliedLoads) !== JSON.stringify(prev.appliedLoads)) {
+                    updated.appliedLoads = elementData.appliedLoads;
+                }
+                if (elementData.loadCombinations && JSON.stringify(elementData.loadCombinations) !== JSON.stringify(prev.loadCombinations)) {
+                    updated.loadCombinations = elementData.loadCombinations;
+                }
+                if (elementData.supports && JSON.stringify(elementData.supports) !== JSON.stringify(prev.supports)) {
+                    updated.supports = elementData.supports;
+                }
+                
+                // Sync basic properties only if significantly different
+                if (elementData.name && elementData.name !== prev.name) {
+                    updated.name = elementData.name;
+                }
+                if (elementData.span && Math.abs(elementData.span - prev.span) > 0.001) {
+                    updated.span = elementData.span;
+                }
+                if (elementData.spacing && Math.abs(elementData.spacing - prev.spacing) > 0.001) {
+                    updated.spacing = elementData.spacing;
+                }
+                if (elementData.sectionName && elementData.sectionName !== prev.sectionName) {
+                    updated.sectionName = elementData.sectionName;
+                    updated.sections = elementData.sections || [];
+                }
+            }
+            
+            return updated;
+        });
     }, [elementData]);
 
     // Sync isSaved state when elementData changes
@@ -180,6 +259,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     //#endregion
 
 
+
+
+
     //#region Form Handlers
     /**
     *  Handles changes to the main element properties.
@@ -189,15 +271,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         const isNumeric = ['span', 'spacing', 'section_count'].includes(name);
         const newValue = isNumeric ? Number(value) : value;
 
-        setElement(prev => {
+        updateElement(prev => {
             const newElement = { ...prev, [name]: newValue };
-            // If the span changes, automatically update the position of the last support if it's a roller.
-            if (name === 'span' && newElement.supports.length > 0) {
-            const lastSupportIndex = newElement.supports.length - 1;
-                //if (newElement.supports[lastSupportIndex].fixity === SupportFixityType.Roller) {
-                    newElement.supports[lastSupportIndex].position = Number(value);
-                //}
-            }
+            
             // When span changes, also set lateralRestraintSpacing to match
             if (name === 'span') {
                 newElement.designParameters = {
@@ -228,7 +304,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
     const handleSelectSection = (section: SectionProperties) => {
         setSectionSearchText(section.name);
-        setElement(prev => ({
+        updateElement(prev => ({
             ...prev,
             sectionName: section.name,
             sections: [section]
@@ -240,7 +316,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         const selectedSectionName = e.target.value;
         const selectedSection = sections.find(s => s.name === selectedSectionName);
         if (selectedSection) {
-            setElement(prev => ({
+            updateElement(prev => ({
                 ...prev,
                 sectionName: selectedSection.name,
                 sections: [selectedSection] // Populate the sections array with the full section object
@@ -300,6 +376,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
     //#endregion
 
+
+
+
+
+
     //#region Support Handlers
 
     /**
@@ -310,14 +391,19 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         const newSupports = [...element.supports];
         const newSupport = { ...newSupports[index], [name]: name === 'position' ? Number(value) : value };
         newSupports[index] = newSupport;
-        setElement(prev => ({ ...prev, supports: newSupports }));
+        updateElement(prev => ({ ...prev, supports: newSupports }));
     };
 
-    const addSupport = () => setElement(prev => ({...prev, supports: [...prev.supports, { position: prev.span, fixity: SupportFixityType.Roller }]}));
+    const addSupport = () => updateElement(prev => ({...prev, supports: [...prev.supports, { position: prev.span, fixity: SupportFixityType.Roller }]}));
     
-    const removeSupport = (index: number) => setElement(prev => ({...prev, supports: prev.supports.filter((_, i) => i !== index)}));
+    const removeSupport = (index: number) => updateElement(prev => ({...prev, supports: prev.supports.filter((_, i) => i !== index)}));
    
     //#endregion
+
+
+
+
+
 
     //#region Load Handlers
      /**
@@ -326,7 +412,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
      * @param newType - The new type of the load.
      */
     const handleLoadTypeChange = (loadIndex: number, newType: LoadType) => {
-        setElement(prev => {
+        updateElement(prev => {
             const newAppliedLoads = [...prev.appliedLoads];
             const currentLoad = { ...newAppliedLoads[loadIndex] };
             
@@ -356,10 +442,32 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             return updatedElement;
         });
     };
+    /**
+     * Handles changes to a load's description.
+     * @param loadIndex - index of the applied load to update
+     * @param newDescription - new description text
+     */
+    const handleLoadDescriptionChange = (loadIndex: number, newDescription: string) => {
+        updateElement(prev => {
+            const newLoads = [...prev.appliedLoads];
+            const current = newLoads[loadIndex] as any;
+            // Update local state
+            newLoads[loadIndex] = { ...current, description: newDescription };
+            // If this load is synced via transfer, update in registry
+            if (current.transfer?.projectId && current.transfer.transferGroupId) {
+                projectTransferRegistry.update(
+                    current.transfer.projectId,
+                    current.transfer.transferGroupId,
+                    { description: newDescription }
+                );
+            }
+            return { ...prev, appliedLoads: newLoads };
+        });
+    };
 
     const handleAppliedLoadChange = (loadIndex: number, forceIndex: number, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setElement(prev => {
+        updateElement(prev => {
             const newAppliedLoads = [...prev.appliedLoads];
             const newForces = [...newAppliedLoads[loadIndex].forces];
             newForces[forceIndex] = { ...newForces[forceIndex], [name]: value };
@@ -372,7 +480,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
      * Handles changes to a load's magnitude value(s). User input is in kN, state is in N.
      */
     const handleLoadMagnitudeChange = (loadIndex: number, forceIndex: number, magnitudeIndex: number, value: string) => {
-        setElement(prev => {
+        updateElement(prev => {
             const newLoads = [...prev.appliedLoads];
             const newForces = [...newLoads[loadIndex].forces];
             const newMagnitudes = [...newForces[forceIndex].magnitude];
@@ -397,7 +505,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     
       // Handles changes to the position of a load.
     const handleLoadPositionChange = (loadIndex: number, posIndex: number, value: string) => {
-        setElement(prev => {
+        updateElement(prev => {
             const newLoads = [...prev.appliedLoads];
             const newPositions = [...newLoads[loadIndex].position];
             newPositions[posIndex] = value;
@@ -407,7 +515,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
     
     const addAppliedLoad = () => {
-        setElement(prev => ({
+        updateElement(prev => ({
             ...prev,
             appliedLoads: [
                 ...prev.appliedLoads,
@@ -424,14 +532,14 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
 
     const removeAppliedLoad = (index: number) => {
-        setElement(prev => ({
+        updateElement(prev => ({
             ...prev,
             appliedLoads: prev.appliedLoads.filter((_, i) => i !== index)
         }));
     };
     
     const addForceToLoad = (loadIndex: number) => {
-        setElement(prev => {
+        updateElement(prev => {
             const newLoads = [...prev.appliedLoads];
             const load = newLoads[loadIndex];
             const existingCases = new Set(load.forces.map(f => f.loadCase));
@@ -448,7 +556,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
 
     const removeForceFromLoad = (loadIndex: number, forceIndex: number) => {
-        setElement(prev => {
+        updateElement(prev => {
             const newLoads = [...prev.appliedLoads];
             newLoads[loadIndex].forces = newLoads[loadIndex].forces.filter((_, i) => i !== forceIndex);
             return { ...prev, appliedLoads: newLoads };
@@ -456,10 +564,16 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
     //#endregion
 
+
+
+
+
+
+
     //#region Load Combination Handlers
     const handleCombinationChange = (comboIndex: number, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setElement(prev => {
+        updateElement(prev => {
             const newCombinations = [...prev.loadCombinations];
             newCombinations[comboIndex] = { ...newCombinations[comboIndex], [name]: value };
             return { ...prev, loadCombinations: newCombinations };
@@ -467,7 +581,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
 
     const addCombination = () => {
-        setElement(prev => ({
+        updateElement(prev => ({
             ...prev,
             loadCombinations: [
                 ...prev.loadCombinations,
@@ -481,7 +595,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
 
     const removeCombination = (index: number) => {
-        setElement(prev => ({
+        updateElement(prev => ({
             ...prev,
             loadCombinations: prev.loadCombinations.filter((_, i) => i !== index)
         }));
@@ -490,7 +604,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const handleFactorChange = (comboIndex: number, factorIndex: number, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         const isNumeric = ['factor', 'termFactor'].includes(name);
-        setElement(prev => {
+        updateElement(prev => {
             const newCombinations = [...prev.loadCombinations];
             const newFactors = [...newCombinations[comboIndex].loadCaseFactors];
             newFactors[factorIndex] = { ...newFactors[factorIndex], [name]: isNumeric ? Number(value) : value };
@@ -500,7 +614,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
 
     const addFactor = (comboIndex: number) => {
-        setElement(prev => {
+        updateElement(prev => {
             const newCombinations = [...prev.loadCombinations];
             const combo = newCombinations[comboIndex];
             combo.loadCaseFactors.push({
@@ -513,7 +627,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
 
     const removeFactor = (comboIndex: number, factorIndex: number) => {
-        setElement(prev => {
+        updateElement(prev => {
             const newCombinations = [...prev.loadCombinations];
             const combo = newCombinations[comboIndex];
             combo.loadCaseFactors = combo.loadCaseFactors.filter((_, i) => i !== factorIndex);
@@ -548,6 +662,12 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         return { ...currentElement, loadCombinations: updatedCombinations };
     };
     //#endregion
+
+
+
+
+
+
 
     //#region Validation & Helper function 
 
@@ -641,6 +761,13 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         );
     }
     //#endregion
+
+
+
+
+
+
+
 
     //#region Render Main Form
     return (
@@ -1327,7 +1454,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     {element.appliedLoads.map((load, loadIndex) => (
                         <FormCollapsibleSectionWithStagedSummary
                             key={loadIndex}
-                            title={`Applied Load ${loadIndex + 1}`}
+                            title={load.description || `Applied Load ${loadIndex + 1}`}
                             defaultStage="preview"
                             enableDoubleClickExpand={true}
                             color="bg-green-100/50"
@@ -1343,6 +1470,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                 {/* Load Type and Remove Button */}
                                 <div className="flex justify-between items-start">
                                     <div>
+                                        <label className={labelClasses}>Name</label>
+                                        <input type="text" value={load.description} onChange={(e) => handleLoadDescriptionChange(loadIndex, e.target.value)} className={`${inputClasses}`} placeholder="Load Name"/>
+
+                                     </div>
+                                    <div>
                                         <label className={labelClasses}>Load Type</label>
                                         <select value={load.type} onChange={(e) => handleLoadTypeChange(loadIndex, e.target.value as LoadType)} className={inputClasses}>
                                             {Object.values(LoadType).map(t => <option key={t} value={t}>{t}</option>)}
@@ -1352,6 +1484,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                         <RemoveIcon className="w-5 h-5"/>
                                     </button>
                                 </div>
+                                
                                 
                                 {/* Load Position */}
                                 <div>
@@ -1437,7 +1570,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                         <div className="flex flex-col md:flex-row items-stretch gap-2">
                             <select value={newLoadSourceMode} onChange={e => setNewLoadSourceMode(e.target.value as any)} className={inputClasses}>
                                 <option value="manual">Manual</option>
-                                <option value="fromProjectReaction">From Project Reaction</option>
+                                <option value="fromProjectReaction">From Element's (Fy) Reaction</option>
                             </select>
 
                             {newLoadSourceMode === 'fromProjectReaction' ? (

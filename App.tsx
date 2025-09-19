@@ -1004,13 +1004,18 @@ const App: React.FC = () => {
       setCanvasItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
   }, []);
   
-  const handleAnalyzeInCanvas = useCallback(async (beamInput: BeamInput) => {
+  const handleAnalyzeInCanvas = useCallback(async (beamInput: BeamInput, itemId: string) => {
     setIsLoading(true);
     try {
         const result = await analyzeBeam(beamInput);
-        const newItem: CanvasItem = { id: crypto.randomUUID(), type: 'beam_output', inputData: beamInput, outputData: result };
-        setCanvasItems(prev => [...prev, newItem]);
-        setSelectedCanvasItemId(newItem.id);
+        // Merge outputData into existing beam_input item
+        setCanvasItems(prev => prev.map(item => {
+          if (item.id === itemId && item.type === 'beam_input') {
+            return { ...item, outputData: result } as CanvasItem;
+          }
+          return item;
+        }));
+        setSelectedCanvasItemId(itemId);
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
         addMessage({ sender: 'ai', text: `Canvas Analysis Failed: ${errorMessage}`, type: 'error' });
@@ -1250,7 +1255,7 @@ const App: React.FC = () => {
             handleFileChange={handleFileChange}
             handleFormChange={handleBeamFormChange} handleFormSubmit={handleBeamFormSubmit} handleFormCancel={handleBeamFormCancel}
             handleAddToCanvas={handleAddToCanvas} analysisDisplayRefs={analysisDisplayRefs} handleUndo={handleUndo}
-            handleActionClick={handleActionClick}
+            handleActionClick={handleActionClick}  
             handleElementFormChange={handleElementFormChange}
             handleElementFormSubmit={handleElementFormSubmit}
             handleElementFormCancel={handleElementFormCancel}

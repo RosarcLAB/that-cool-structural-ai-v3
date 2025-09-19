@@ -1,7 +1,7 @@
 // components/Canvas.tsx: Renders the side panel for pinned items.
 
 import React, { useState } from 'react';
-import { CanvasItem, CanvasTextItem, StatusMessage } from '../customTypes/types';
+import { CanvasItem, CanvasTextItem, CanvasBeamInputItem, StatusMessage } from '../customTypes/types';
 import type { Element as StructuralElement } from '../customTypes/structuralElement';
 import { BeamInput } from '../customTypes/structuralElement';
 import { CloseIcon } from './utility/icons';
@@ -16,7 +16,7 @@ interface CanvasProps {
     onSelectItem: (id: string | null) => void;
     onCloseItem: (id: string) => void;
     onUpdateItem: (item: CanvasItem) => void;
-    onAnalyzeInCanvas: (beamInput: BeamInput) => Promise<void>;
+    onAnalyzeInCanvas: (beamInput: BeamInput, itemId: string) => Promise<void>;
     // New handlers for element actions inside the Canvas
     onElementSave?: (element: StructuralElement, itemId: string) => Promise<void>;
     onElementDesign?: (element: StructuralElement, itemId: string) => Promise<void>;
@@ -81,7 +81,7 @@ export const Canvas: React.FC<CanvasProps> = ({
 
     const handleFormSubmit = async (data: BeamInput, itemId: string) => {
         setAnalyzingId(itemId);
-        await onAnalyzeInCanvas(data);
+        await onAnalyzeInCanvas(data, itemId);
         setAnalyzingId(null);
     };
 
@@ -254,24 +254,32 @@ export const Canvas: React.FC<CanvasProps> = ({
                                     />
                                 </SelectedItemWrapper>
                             );
-                        case 'beam_input':
-                             const isAnalyzing = analyzingId === selectedItem.id;
-                             return (
-                                <SelectedItemWrapper title={`Edit: ${selectedItem.data.Name}`}>
-                                   {isAnalyzing && (
-                                       <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
-                                           <Spinner />
-                                           <span className="ml-2">Analyzing...</span>
-                                       </div>
-                                   )}
-                                   <BeamInputForm
-                                        initialData={selectedItem.data}
-                                        onChange={(updatedData) => onUpdateItem({ ...selectedItem, data: updatedData })}
-                                        onSubmit={(data) => handleFormSubmit(data, selectedItem.id)}
-                                        submitButtonText="Analyze in Canvas"
-                                    />
-                                </SelectedItemWrapper>
-                            );
+                                                case 'beam_input': {
+                                                         const isAnalyzing = analyzingId === selectedItem.id;
+                                                         const inputItem = selectedItem as CanvasBeamInputItem;
+                                                         return (
+                                                                <SelectedItemWrapper title={`Edit: ${inputItem.data.Name}`}>
+                                                                     {isAnalyzing && (
+                                                                             <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
+                                                                                     <Spinner />
+                                                                                     <span className="ml-2">Analyzing...</span>
+                                                                             </div>
+                                                                     )}
+                                                                     <BeamInputForm
+                                                                                initialData={inputItem.data}
+                                                                                onChange={(updatedData) => onUpdateItem({ ...inputItem, data: updatedData })}
+                                                                                onSubmit={(data) => handleFormSubmit(data, inputItem.id)}
+                                                                                submitButtonText="Analyze in Canvas"
+                                                                        />
+                                                                     {/* Render analysis results in same chip when available */}
+                                                                     {inputItem.outputData && (
+                                                                         <div className="mt-4">
+                                                                             <BeamAnalysisDisplay input={inputItem.data} output={inputItem.outputData} />
+                                                                         </div>
+                                                                     )}
+                                                                </SelectedItemWrapper>
+                                                         );
+                                                }
                         case 'beam_output':
                             return (
                                 <SelectedItemWrapper title={`Results: ${selectedItem.inputData.Name}`}>

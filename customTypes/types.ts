@@ -75,15 +75,53 @@ export type CancelAttachmentAnalysisAction = {
     type: 'cancel_attachment_analysis';
 };
 
+/** A single property change on target object T */
+export interface PropertyUpdate<T> {
+    /** The field name to update */
+    property: keyof T;
+    /** The new value for that field */
+    value: T[keyof T];
+}
+
 export type FormManipulationAction = {
-    type: 'addSupport' | 'removeSupport' | 'addLoad' | 'removeLoad' | 'addLoadCombination' | 'removeLoadCombination' | 'addLoadCaseFactor' | 'removeLoadCaseFactor';
-    targetIndex: number; // Index of the form within the message
-    itemIndex?: number; // Index of the item to remove (for remove actions)
-    parentIndex?: number; // Index of parent item (for nested actions like load case factors)
+        type:
+            | 'addSupport'
+            | 'removeSupport'
+            | 'editSupport'
+            | 'addLoad'
+            | 'removeLoad'
+            | 'editLoad'
+            | 'addAppliedLoad'
+            | 'removeAppliedLoad'
+            | 'editAppliedLoad'
+            | 'addLoadCombination'
+            | 'removeLoadCombination'
+            | 'editLoadCombination'
+            | 'addLoadCaseFactor'
+            | 'removeLoadCaseFactor'
+            | 'editLoadCaseFactor';
+        targetIndex: number; // Index of the form within the message
+        itemIndex?: number; // Index of the item to remove or edit (for remove/edit actions)
+        parentIndex?: number; // Index of parent item (for nested actions like load case factors)
+    /** Array of property‐value pairs describing the fields to update */
+    updatedProperties?: PropertyUpdate<any>[];
 };
 
+export type LoadTransferAction = {
+    type: 'add_load_transfer';
+    sourceElementName: string;
+    supportIndex: number;
+    targetElementName: string;
+    targetPosition: number; // Position on target element where load should be placed
+    targetContext: 'chat' | 'canvas';
+} | {
+    type: 'remove_load_transfer';
+    targetElementName: string;
+    transferGroupId: string;
+    targetContext: 'chat' | 'canvas';
+};
 
-export type Action = FormAction | GlobalAction | UpdateAction | DownloadAction | ConfirmAttachmentAnalysisAction | CancelAttachmentAnalysisAction | FormManipulationAction;
+export type Action = FormAction | GlobalAction | UpdateAction | DownloadAction | ConfirmAttachmentAnalysisAction | CancelAttachmentAnalysisAction | FormManipulationAction | LoadTransferAction;
 
 
 // Represents the structured decision from the Gemini API.
@@ -108,6 +146,8 @@ export interface CanvasBeamInputItem {
     id: string;
     type: 'beam_input';
     data: BeamInput;
+    /** Optional analysis result merged into this item */
+    outputData?: BeamOutput;
 }
 
 export interface CanvasBeamOutputItem {
