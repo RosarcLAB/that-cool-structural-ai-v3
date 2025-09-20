@@ -67,6 +67,17 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isProjectsDrawerOpen, setIsProjectsDrawerOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  
+  // Keep selectedProject in sync with projects array
+  useEffect(() => {
+    if (selectedProject) {
+      const updatedProject = projects.find(p => p.id === selectedProject.id);
+      if (updatedProject && updatedProject !== selectedProject) {
+        setSelectedProject(updatedProject);
+      }
+    }
+  }, [projects, selectedProject]);
+  
   // State for delete confirmation modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<StructuralElement | null>(null);

@@ -52,10 +52,15 @@ export const ProjectsDrawer: React.FC<ProjectsDrawerProps> = ({
   const visibleProjects = projects.filter(p =>
     p.name.toLowerCase().includes(filterTerm.toLowerCase())
   );
-  // Filter elements based on search term
-  const visibleElements = elements.filter(e =>
-    e.name.toLowerCase().includes(filterTerm.toLowerCase())
-  );
+  // Filter elements based on search term and sort by last edited (most recent first)
+  const visibleElements = elements
+    .filter(e => e.name.toLowerCase().includes(filterTerm.toLowerCase()))
+    .sort((a, b) => {
+      // Sort by updatedAt timestamp, most recent first
+      const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+      const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+      return dateB - dateA; // Descending order (newest first)
+    });
 
   return (
     // Main drawer container with fixed positioning and shadow

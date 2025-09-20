@@ -60,6 +60,7 @@ export interface TextEditorHandle {
   downloadPdf: () => void;
   downloadText: () => void;
   getPlainText: () => string;
+  clearDocument: () => void;
 }
 
 const initialValue: CustomElement[] = [
@@ -137,11 +138,37 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
     URL.revokeObjectURL(url);
   };
 
+  // Clear document content
+  const handleClearDocument = () => {
+    if (confirm('Are you sure you want to clear all content? This action cannot be undone.')) {
+      // Select all content and delete it
+      Transforms.select(editor, Editor.range(editor, []));
+      Transforms.delete(editor);
+      
+      // Insert a single empty paragraph
+      const emptyParagraph: CustomElement = {
+        type: 'paragraph',
+        children: [{ text: '' }],
+      };
+      
+      Transforms.insertNodes(editor, emptyParagraph);
+      
+      // Move cursor to the beginning
+      Transforms.select(editor, Editor.start(editor, []));
+      
+      // Call onChange if provided
+      if (onChange && !readOnly) {
+        onChange([emptyParagraph]);
+      }
+    }
+  };
+
   // Expose methods to parent
   useImperativeHandle(ref, () => ({
     downloadPdf: handleDownloadPdf,
     downloadText: handleDownloadText,
     getPlainText,
+    clearDocument: handleClearDocument,
   }));
 
   const renderElement = useCallback(({ attributes, children, element }: any) => {
@@ -212,10 +239,21 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
 
   return (
     <div className={`bg-white rounded-lg ${className}`}>
-      {/* Header with download buttons */}
+      {/* Header with action buttons */}
       <div className="flex justify-between items-center border-b pb-3 mb-4">
         <h4 className="text-lg font-semibold text-gray-800">{title}</h4>
         <div className="flex items-center gap-2">
+          {!readOnly && (
+            <button
+              onClick={handleClearDocument}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-full transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Clear
+            </button>
+          )}
           <button
             onClick={handleDownloadPdf}
             disabled={isDownloadingPdf}
@@ -239,23 +277,23 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
           {/* Toolbar */}
           {!readOnly && (
             <div className="flex flex-wrap gap-1 p-2 border border-gray-200 rounded-t-lg bg-gray-50 mb-0">
-              <MarkButton format="bold" icon="B" />
-              <MarkButton format="italic" icon="I" />
-              <MarkButton format="underline" icon="U" />
-              <MarkButton format="code" icon="</>" />
-              <MarkButton format="superscript" icon="x²" />
-              <MarkButton format="subscript" icon="x₂" />
+              <MarkButton format="bold" icon="B" label="Bold" />
+              <MarkButton format="italic" icon="I" label="Italic" />
+              <MarkButton format="underline" icon="U" label="Underline" />
+              <MarkButton format="code" icon="</>" label="Code" />
+              <MarkButton format="superscript" icon="x²" label="Superscript" />
+              <MarkButton format="subscript" icon="x₂" label="Subscript" />
               <div className="w-px h-6 bg-gray-300 mx-1" />
-              <BlockButton format="heading-one" icon="H1" />
-              <BlockButton format="heading-two" icon="H2" />
-              <BlockButton format="block-quote" icon="❝" />
+              <BlockButton format="heading-one" icon="H1" label="Heading 1" />
+              <BlockButton format="heading-two" icon="H2" label="Heading 2" />
+              <BlockButton format="block-quote" icon="❝" label="Quote" />
               <div className="w-px h-6 bg-gray-300 mx-1" />
-              <BlockButton format="numbered-list" icon="1." />
-              <BlockButton format="bulleted-list" icon="•" />
+              <BlockButton format="numbered-list" icon="1." label="Numbered List" />
+              <BlockButton format="bulleted-list" icon="•" label="Bulleted List" />
               <div className="w-px h-6 bg-gray-300 mx-1" />
-              <BlockButton format="left" icon="⫷" />
-              <BlockButton format="center" icon="≡" />
-              <BlockButton format="right" icon="⫸" />
+              <BlockButton format="left" icon="⫷" label="Align Left" />
+              <BlockButton format="center" icon="≡" label="Align Center" />
+              <BlockButton format="right" icon="⫸" label="Align Right" />
             </div>
           )}
           
@@ -285,7 +323,7 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
 });
 
 // Toolbar button components
-const MarkButton: React.FC<{ format: string; icon: string }> = ({ format, icon }) => {
+const MarkButton: React.FC<{ format: string; icon: string; label: string }> = ({ format, icon, label }) => {
   const editor = useSlate();
   
   return (
@@ -299,13 +337,14 @@ const MarkButton: React.FC<{ format: string; icon: string }> = ({ format, icon }
         event.preventDefault();
         toggleMark(editor, format);
       }}
+      title={label}
     >
       {icon}
     </button>
   );
 };
 
-const BlockButton: React.FC<{ format: string; icon: string }> = ({ format, icon }) => {
+const BlockButton: React.FC<{ format: string; icon: string; label: string }> = ({ format, icon, label }) => {
   const editor = useSlate();
   
   return (
@@ -319,6 +358,7 @@ const BlockButton: React.FC<{ format: string; icon: string }> = ({ format, icon 
         event.preventDefault();
         toggleBlock(editor, format);
       }}
+      title={label}
     >
       {icon}
     </button>
