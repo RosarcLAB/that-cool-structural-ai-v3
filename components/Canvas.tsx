@@ -1,8 +1,8 @@
 // components/Canvas.tsx: Renders the side panel for pinned items.
 
 import React, { useState } from 'react';
-import { CanvasItem, CanvasTextItem, CanvasBeamInputItem, StatusMessage } from '../customTypes/types';
-import type { Element as StructuralElement } from '../customTypes/structuralElement';
+import { CanvasItem, CanvasTextItem, CanvasBeamInputItem} from '../customTypes/types';
+import type { StatusMessage, Element as StructuralElement } from '../customTypes/structuralElement';
 import { BeamInput } from '../customTypes/structuralElement';
 import { CloseIcon } from './utility/icons';
 import StructuralElementForm from './structuralEngineering/StructuralElementForm';

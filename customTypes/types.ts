@@ -1,5 +1,5 @@
 // types.ts: Defines the core data structures and type definitions for the application.
-import type { BeamInput, BeamOutput, Element } from './structuralElement';
+import type { BeamInput, BeamOutput, Element, Support, Load, AppliedLoads, LoadCombination, LoadCaseFactor, StatusMessage } from './structuralElement';
 import type { Timestamp, FieldValue } from 'firebase/firestore';
 
 // Defines the sender of a chat message.
@@ -75,12 +75,14 @@ export type CancelAttachmentAnalysisAction = {
     type: 'cancel_attachment_analysis';
 };
 
-/** A single property change on target object T */
-export interface PropertyUpdate<T> {
-    /** The field name to update */
-    property: keyof T;
-    /** The new value for that field */
-    value: T[keyof T];
+/** Unified action data interface that accepts either direct objects or property updates */
+export interface ActionData {
+    // For add operations - complete objects
+    newItem?: Support | Load | AppliedLoads | LoadCombination | LoadCaseFactor;
+    // For edit operations - property updates
+    propertyUpdates?: Record<string, any>;
+    // For bulk add operations
+    newItems?: Array<Support | Load | AppliedLoads | LoadCombination | LoadCaseFactor>;
 }
 
 export type FormManipulationAction = {
@@ -103,8 +105,8 @@ export type FormManipulationAction = {
         targetIndex: number; // Index of the form within the message
         itemIndex?: number; // Index of the item to remove or edit (for remove/edit actions)
         parentIndex?: number; // Index of parent item (for nested actions like load case factors)
-    /** Array of property‐value pairs describing the fields to update */
-    updatedProperties?: PropertyUpdate<any>[];
+    /** Unified data payload that can handle different action types */
+    data?: ActionData;
 };
 
 export type LoadTransferAction = {
@@ -298,11 +300,4 @@ export interface Project {
   
   // Integration with conversation system
   conversationIds?: string[]; // Associated chat conversations
-}
-// Represents a status message for UI feedback.
-export interface StatusMessage {
-    type: 'loading' | 'success' | 'error' | 'info';
-    message: string;
-    timestamp?: string;
-    user?: User; // optional actor who triggered this status
 }

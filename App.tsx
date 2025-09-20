@@ -1,8 +1,8 @@
 // App.tsx: The main application component that orchestrates the entire UI and state management.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChatMessage, Action, FilePayload, CanvasItem, StandardLoads, CanvasBeamInputItem, ConfirmAttachmentAnalysisAction, StatusMessage, Project } from './customTypes/types';
-import { BeamInput, Element as StructuralElement, SupportFixityType, LoadType, LoadCaseType, LoadCombinationUtils } from './customTypes/structuralElement';
+import { ChatMessage, Action, FilePayload, CanvasItem, StandardLoads, CanvasBeamInputItem, ConfirmAttachmentAnalysisAction, Project } from './customTypes/types';
+import { BeamInput, Element as StructuralElement, SupportFixityType, LoadType, LoadCaseType, StatusMessage,  LoadCombinationUtils } from './customTypes/structuralElement';
 import { MaterialType, SectionProperties } from './customTypes/SectionProperties';
 import { getAiDecision } from './services/geminiService';
 import { analyzeBeam, designAllCombinations } from './services/analysisService';
@@ -23,6 +23,7 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { ProjectsDrawer } from './components/projects/ProjectsDrawer';
 import { ConfirmDeleteModal } from './components/utility/ConfirmDeleteModal';
 import { UserProfileModal } from './components/auth/UserProfile';
+import { ConfirmationModal } from './components/utility/ConfirmationModal';
 import { projectTransferRegistry } from './services/projectTransferRegistry';
 
 
@@ -71,6 +72,14 @@ const App: React.FC = () => {
   const [elementToDelete, setElementToDelete] = useState<StructuralElement | null>(null);
   //User profile
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
+  // State for form cancellation confirmation modal
+  const [isCancelConfirmModalOpen, setIsCancelConfirmModalOpen] = useState(false);
+  const [pendingCancellation, setPendingCancellation] = useState<{
+    messageId: string;
+    formIndex: number;
+    formType: 'beam' | 'element';
+    formName?: string;
+  } | null>(null);
   
   //#endregion
 
@@ -120,10 +129,34 @@ const App: React.FC = () => {
     refreshSections();
   }, [refreshSections]);
 
-  // Initial fetch of projects when the app loads.
+  // Set up real-time project subscription when user is authenticated
   useEffect(() => {
-    refreshProjects();
-  }, [refreshProjects]);
+    if (!user?.uid) return;
+
+    console.log('Setting up real-time project subscription for user:', user.uid);
+    
+    const unsubscribe = projectService.subscribeToUserProjects(
+      user.uid,
+      (updatedProjects) => {
+        console.log('Received real-time project update:', updatedProjects.length, 'projects');
+        setProjects(updatedProjects);
+      },
+      (error) => {
+        console.error('Project subscription error:', error);
+        // Fallback to manual refresh on error
+        refreshProjects();
+      }
+    );
+
+    return unsubscribe;
+  }, [user?.uid, refreshProjects]);
+
+  // Initial fetch of projects when the app loads (fallback for when subscription isn't immediately available)
+  useEffect(() => {
+    if (!user?.uid) {
+      refreshProjects(); // For demo/unauthenticated users
+    }
+  }, [refreshProjects, user?.uid]);
 
   // Listen for authentication state changes
   useEffect(() => {
@@ -207,6 +240,62 @@ const App: React.FC = () => {
       })
     );
   }, []);
+
+  /** Completely removes a form from a message or the entire message if it's the only form */
+  const removeFormFromMessage = useCallback((messageId: string, formIndex: number) => {
+    // Save history snapshot before removal
+    saveHistorySnapshot();
+    
+    setMessages(prev => {
+      return prev.reduce((acc, msg) => {
+        if (msg.id !== messageId) {
+          acc.push(msg);
+          return acc;
+        }
+        
+        // Handle beam input forms
+        if (msg.type === 'beam_input_form' && msg.beamInputsData) {
+          const remainingForms = msg.beamInputsData.filter((_, i) => i !== formIndex);
+          const remainingActiveStates = msg.isFormActive?.filter((_, i) => i !== formIndex);
+          
+          // If no forms left, don't add this message to the result (complete removal)
+          if (remainingForms.length === 0) {
+            return acc;
+          }
+          
+          // Otherwise, add the message with remaining forms
+          acc.push({
+            ...msg,
+            beamInputsData: remainingForms,
+            isFormActive: remainingActiveStates
+          });
+        }
+        // Handle element forms
+        else if (msg.type === 'element_form' && msg.elementData) {
+          const remainingForms = msg.elementData.filter((_, i) => i !== formIndex);
+          const remainingActiveStates = msg.isFormActive?.filter((_, i) => i !== formIndex);
+          
+          // If no forms left, don't add this message to the result (complete removal)
+          if (remainingForms.length === 0) {
+            return acc;
+          }
+          
+          // Otherwise, add the message with remaining forms
+          acc.push({
+            ...msg,
+            elementData: remainingForms,
+            isFormActive: remainingActiveStates
+          });
+        }
+        // For other message types, keep as is
+        else {
+          acc.push(msg);
+        }
+        
+        return acc;
+      }, [] as ChatMessage[]);
+    });
+  }, [saveHistorySnapshot]);
   //#endregion
 
 
@@ -267,11 +356,21 @@ const App: React.FC = () => {
   }, [deactivateFormInMessage, addMessage]);
 
   /** Handles cancellation of the beam input form.
-   * Deactivates the form and resets any temporary state.
+   * Shows confirmation modal before removing the form.
    */
   const handleBeamFormCancel = useCallback((messageId: string, formIndex: number) => {
-    deactivateFormInMessage(messageId, formIndex);
-  }, [deactivateFormInMessage]);
+    // Find the form name for the confirmation message
+    const message = messages.find(msg => msg.id === messageId);
+    const formName = message?.beamInputsData?.[formIndex]?.Name || 'Beam Form';
+    
+    setPendingCancellation({
+      messageId,
+      formIndex,
+      formType: 'beam',
+      formName
+    });
+    setIsCancelConfirmModalOpen(true);
+  }, [messages]);
   //#endregion
 
 
@@ -389,13 +488,38 @@ const App: React.FC = () => {
     }, [user, setProjects, setMessages]);
   
     /** Handles cancellation of the structural element form.
-     * Deactivates the form and resets any temporary state.
+     * Shows confirmation modal before removing the form.
      * @param messageId - The ID of the message containing the form.
      * @param formIndex - The index of the form within the message.
      */
     const handleElementFormCancel = useCallback((messageId: string, formIndex: number) => {
-        deactivateFormInMessage(messageId, formIndex);
-    }, [deactivateFormInMessage]);
+        // Find the form name for the confirmation message
+        const message = messages.find(msg => msg.id === messageId);
+        const formName = message?.elementData?.[formIndex]?.name || 'Element Form';
+        
+        setPendingCancellation({
+          messageId,
+          formIndex,
+          formType: 'element',
+          formName
+        });
+        setIsCancelConfirmModalOpen(true);
+    }, [messages]);
+
+  /** Handles confirmation of form cancellation */
+  const handleConfirmFormCancel = useCallback(() => {
+    if (pendingCancellation) {
+      removeFormFromMessage(pendingCancellation.messageId, pendingCancellation.formIndex);
+    }
+    setIsCancelConfirmModalOpen(false);
+    setPendingCancellation(null);
+  }, [pendingCancellation, removeFormFromMessage]);
+
+  /** Handles cancellation of the confirmation modal (don't cancel the form) */
+  const handleCancelFormCancel = useCallback(() => {
+    setIsCancelConfirmModalOpen(false);
+    setPendingCancellation(null);
+  }, []);
 
   /** Handles saving the structural element to the database.
    * Implements optimistic UI updates and error handling.
@@ -707,10 +831,15 @@ const App: React.FC = () => {
    * Uses a ref to maintain a stable instance of ProcessAiDecision.
    * @param decision - The decision object returned by the AI.
    */
-  const aiDecisionProcessor = useRef(new ProcessAiDecision(addMessage, (actions) => processAiActions(actions))).current;
+  const aiDecisionProcessor = useRef(new ProcessAiDecision(addMessage, (actions) => processAiActions(actions), sections)).current;
   const processAiDecision = useCallback(async (decision: any) => {
     aiDecisionProcessor.processDecision(decision);
   }, [aiDecisionProcessor]);
+
+  // Update AI decision processor with latest sections when they change
+  useEffect(() => {
+    aiDecisionProcessor.updateAvailableSections(sections);
+  }, [sections, aiDecisionProcessor]);
 
   // Handles clicks on interactive buttons within a chat message (e.g., Proceed/Cancel).
   const handleActionClick = async (messageId: string, action: Action) => {
@@ -944,6 +1073,38 @@ const App: React.FC = () => {
       // Add element context if available
       if (elementsInContext.length > 0) {
           promptWithContext += `\n\n# Current Element Context ('${context}')\n${JSON.stringify(elementsInContext, null, 2)}`;
+      }
+
+      // Add project context to help AI understand available projects and their elements
+      if (projects.length > 0) {
+          const projectSummary = projects.map(p => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              elementCount: p.elements?.length || 0,
+              elements: p.elements?.map(e => ({
+                  id: e.id,
+                  name: e.name,
+                  type: e.type,
+                  span: e.span,
+                  sectionName: e.sectionName,
+                  isSaved: e.isSaved
+              })) || []
+          }));
+          promptWithContext += `\n\n# Available Projects Context\n${JSON.stringify(projectSummary, null, 2)}`;
+      }
+
+      // Add section context to help AI understand available structural sections
+      if (sections.length > 0) {
+          const sectionSummary = sections.map(s => ({
+              name: s.name,
+              shape: s.shape,
+              material: s.material,
+              depth: s.d,
+              width: s.b,
+              thickness: s.t
+          }));
+          promptWithContext += `\n\n# Available Sections Context\n${JSON.stringify(sectionSummary, null, 2)}`;
       }
 
       const decision = await getAiDecision(promptWithContext, chatHistory, filePayload, context);
@@ -1189,6 +1350,17 @@ const App: React.FC = () => {
          
       />
 
+      <ConfirmationModal
+        isOpen={isCancelConfirmModalOpen}
+        title="Cancel Form"
+        message={`Are you sure you want to cancel "${pendingCancellation?.formName}"? This will permanently remove the form and all entered data (if not saved).`}
+        confirmText="Yes, Cancel Form"
+        cancelText="Keep Form"
+        onConfirm={handleConfirmFormCancel}
+        onCancel={handleCancelFormCancel}
+        variant="warning"
+      />
+
       <div className={`flex h-screen bg-base-200 font-sans overflow-hidden transition-all duration-300`}>
         <ProjectsDrawer
           isOpen={isProjectsDrawerOpen}
@@ -1199,7 +1371,16 @@ const App: React.FC = () => {
           onSelectProject={setSelectedProject}
           onBackToProjects={() => setSelectedProject(null)}
           onAddProject={() => { /* TODO */ }}
-          onEditProject={() => { /* TODO */ }}
+          onEditProject={(updatedProject) => {
+            // Update the projects array with the updated project
+            setProjects(prev => prev.map(p => 
+              p.id === updatedProject.id ? updatedProject : p
+            ));
+            // Update selectedProject if it's the one being edited
+            if (selectedProject && selectedProject.id === updatedProject.id) {
+              setSelectedProject(updatedProject);
+            }
+          }}
           onDeleteProject={() => { /* TODO */ }}
           onElementClick={handleElementClick}
           onElementDoubleClick={handleElementDoubleClick}

@@ -1,4 +1,4 @@
-import { Action, ChatMessage, PropertyUpdate } from '../customTypes/types';
+import { Action, ChatMessage } from '../customTypes/types';
 import { BeamInput, Element as StructuralElement, SupportFixityType, LoadType, LoadCaseType } from '../customTypes/structuralElement';
 import { projectTransferRegistry } from '../services/projectTransferRegistry';
 
@@ -98,63 +98,66 @@ export class ProcessAiActions {
                     let element = { ...updatedElementData[action.targetIndex] };
                     switch (action.type) {
                         case 'addSupport':
-                            element.supports = [...element.supports, { position: element.span, fixity: SupportFixityType.Roller }];
+                            // Use AI-provided data or fallback to default
+                            const newSupport = action.data?.newItem as any || { position: element.span, fixity: SupportFixityType.Roller };
+                            element.supports = [...element.supports, newSupport];
                             break;
                         case 'removeSupport':
                             if (typeof action.itemIndex === 'number') element.supports = element.supports.filter((_, i) => i !== action.itemIndex);
                             break;
                         case 'editSupport':
-                            if (typeof action.itemIndex === 'number' && action.updatedProperties) {
-                                const updates = action.updatedProperties as PropertyUpdate<typeof element.supports[0]>[];
+                            if (typeof action.itemIndex === 'number' && action.data?.propertyUpdates) {
                                 element.supports = element.supports.map((s, i) => {
                                     if (i !== action.itemIndex) return s;
-                                    return updates.reduce((acc, { property, value }) => ({ ...acc, [property]: value }), s);
+                                    return { ...s, ...action.data!.propertyUpdates };
                                 });
                             }
                             break;
                         case 'addAppliedLoad':
-                            if (action.updatedProperties) {
-                                const loadsToAdd = Array.isArray(action.updatedProperties) ? action.updatedProperties : [action.updatedProperties];
-                                element.appliedLoads = [...element.appliedLoads, ...(loadsToAdd as any[])];
+                            if (action.data?.newItem) {
+                                element.appliedLoads = [...element.appliedLoads, action.data.newItem as any];
+                            } else if (action.data?.newItems) {
+                                element.appliedLoads = [...element.appliedLoads, ...(action.data.newItems as any[])];
                             }
                             break;
                         case 'removeAppliedLoad':
                             if (typeof action.itemIndex === 'number') element.appliedLoads = element.appliedLoads.filter((_, i) => i !== action.itemIndex);
                             break;
                         case 'editAppliedLoad': {
-                            if (typeof action.itemIndex === 'number' && action.updatedProperties) {
-                                const updates = action.updatedProperties as PropertyUpdate<typeof element.appliedLoads[0]>[];
+                            if (typeof action.itemIndex === 'number' && action.data?.propertyUpdates) {
                                 element.appliedLoads = element.appliedLoads.map((l, i) => {
                                     if (i !== action.itemIndex) return l;
-                                    return updates.reduce((acc, { property, value }) => ({ ...acc, [property]: value }), l);
+                                    return { ...l, ...action.data!.propertyUpdates };
                                 });
                             }
                             break;
                         }
                         case 'addLoadCombination':
-                            if (action.updatedProperties) {
-                                const combosToAdd = Array.isArray(action.updatedProperties) ? action.updatedProperties : [action.updatedProperties];
-                                element.loadCombinations = [...element.loadCombinations, ...(combosToAdd as any[])];
+                            if (action.data?.newItem) {
+                                element.loadCombinations = [...element.loadCombinations, action.data.newItem as any];
+                            } else if (action.data?.newItems) {
+                                element.loadCombinations = [...element.loadCombinations, ...(action.data.newItems as any[])];
                             }
                             break;
                         case 'removeLoadCombination':
                             if (typeof action.itemIndex === 'number') element.loadCombinations = element.loadCombinations.filter((_, i) => i !== action.itemIndex);
                             break;
                         case 'editLoadCombination': {
-                            if (typeof action.itemIndex === 'number' && action.updatedProperties) {
-                                const updates = action.updatedProperties as PropertyUpdate<typeof element.loadCombinations[0]>[];
+                            if (typeof action.itemIndex === 'number' && action.data?.propertyUpdates) {
                                 element.loadCombinations = element.loadCombinations.map((c, i) => {
                                     if (i !== action.itemIndex) return c;
-                                    return updates.reduce((acc, { property, value }) => ({ ...acc, [property]: value }), c);
+                                    return { ...c, ...action.data!.propertyUpdates };
                                 });
                             }
                             break;
                         }
                         case 'addLoadCaseFactor':
-                            if (action.parentIndex != null && action.updatedProperties) {
+                            if (action.parentIndex != null && action.data?.newItem) {
                                 const combo = element.loadCombinations[action.parentIndex];
-                                const factorsToAdd = Array.isArray(action.updatedProperties) ? action.updatedProperties : [action.updatedProperties];
-                                combo.loadCaseFactors = [...combo.loadCaseFactors, ...(factorsToAdd as any[])];
+                                combo.loadCaseFactors = [...combo.loadCaseFactors, action.data.newItem as any];
+                            } else if (action.parentIndex != null && action.data?.newItems) {
+                                const combo = element.loadCombinations[action.parentIndex];
+                                combo.loadCaseFactors = [...combo.loadCaseFactors, ...(action.data.newItems as any[])];
                             }
                             break;
                         case 'removeLoadCaseFactor':
@@ -164,12 +167,11 @@ export class ProcessAiActions {
                             }
                             break;
                         case 'editLoadCaseFactor': {
-                            if (typeof action.parentIndex === 'number' && typeof action.itemIndex === 'number' && action.updatedProperties) {
+                            if (typeof action.parentIndex === 'number' && typeof action.itemIndex === 'number' && action.data?.propertyUpdates) {
                                 const combo = element.loadCombinations[action.parentIndex];
-                                const updates = action.updatedProperties as PropertyUpdate<typeof combo.loadCaseFactors[0]>[];
                                 combo.loadCaseFactors = combo.loadCaseFactors.map((f, i) => {
                                     if (i !== action.itemIndex) return f;
-                                    return updates.reduce((acc, { property, value }) => ({ ...acc, [property]: value }), f);
+                                    return { ...f, ...action.data!.propertyUpdates };
                                 });
                             }
                             break;
@@ -187,19 +189,20 @@ export class ProcessAiActions {
                             if (typeof action.itemIndex === 'number') beam.Supports = beam.Supports.filter((_, i) => i !== action.itemIndex);
                             break;
                         case 'editSupport':
-                            if (typeof action.itemIndex === 'number' && action.updatedProperties) {
-                                const updates = action.updatedProperties as PropertyUpdate<typeof beam.Supports[0]>[];
+                            if (typeof action.itemIndex === 'number' && action.data?.propertyUpdates) {
                                 beam.Supports = beam.Supports.map((s, i) => {
                                     if (i !== action.itemIndex) return s;
-                                    return updates.reduce((acc, { property, value }) => ({ ...acc, [property]: value }), s);
+                                    return { ...s, ...action.data!.propertyUpdates };
                                 });
                             }
                             break;
                         case 'addLoad':
-                            if (action.updatedProperties) {
-                                const loadsToAdd = Array.isArray(action.updatedProperties) ? action.updatedProperties : [action.updatedProperties];
-                                beam.Loads = [...beam.Loads, ...(loadsToAdd as any[])];
+                            if (action.data?.newItem) {
+                                beam.Loads = [...beam.Loads, action.data.newItem as any];
+                            } else if (action.data?.newItems) {
+                                beam.Loads = [...beam.Loads, ...(action.data.newItems as any[])];
                             } else {
+                                // Default load if no data provided
                                 beam.Loads = [...beam.Loads, { name: "New Load", type: LoadType.PointLoad, magnitude: [1000], position: [String(beam.Span/2)] }];
                             }
                             break;
@@ -207,11 +210,10 @@ export class ProcessAiActions {
                             if (typeof action.itemIndex === 'number') beam.Loads = beam.Loads.filter((_, i) => i !== action.itemIndex);
                             break;
                         case 'editLoad': {
-                            if (typeof action.itemIndex === 'number' && action.updatedProperties) {
-                                const updates = action.updatedProperties as PropertyUpdate<typeof beam.Loads[0]>[];
+                            if (typeof action.itemIndex === 'number' && action.data?.propertyUpdates) {
                                 beam.Loads = beam.Loads.map((l, i) => {
                                     if (i !== action.itemIndex) return l;
-                                    return updates.reduce((acc, { property, value }) => ({ ...acc, [property]: value }), l);
+                                    return { ...l, ...action.data!.propertyUpdates };
                                 });
                             }
                             break;

@@ -526,7 +526,19 @@ export interface DesignParameters {
   codeParameters?: { [key: string]: any; };
 }
 
-import type { StatusMessage } from './types';
+// Represents a status message for UI feedback.
+export interface StatusMessage {
+    type: 'loading' | 'success' | 'error' | 'info';
+    message: string;
+    timestamp?: string;
+    user?: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        displayName: string;
+    }; // Minimal user info to avoid circular dependency
+}
 
 export interface Element {
     // Basic element identification
@@ -586,6 +598,10 @@ export interface Element {
     designResults?: DesignOutput[];
   // New optional status message attached to the element (for UI feedback & audit)
   statusMessage?: StatusMessage;
+    
+    // Document content from text editor
+    documentContent?: any[]; // Slate.js document content (rich text)
+    documentPlainText?: string; // Plain text version for search and display
     
     // Persistence tracking
     isSaved?: boolean; // True if element has been saved to Firestore

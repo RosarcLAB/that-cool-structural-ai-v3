@@ -11,6 +11,7 @@ import { DesignResultsDisplay } from './DesignResultsDisplay';
 import { projectTransferRegistry } from '../../services/projectTransferRegistry';
 import { projectService } from '../../services/projectService';
 import { designAllCombinations } from '../../services/analysisService';
+import TextEditor, { TextEditorHandle } from '../utility/TextEditor';
  
  
  
@@ -34,13 +35,14 @@ interface StructuralElementFormProps {
     wasCancelledProp?: boolean; // Let parent control cancel state
     statusMessage?: StatusMessage | null; // Status messages from parent
     onPin?: () => void; // optional callback to pin this form's element to the Canvas
+    onAddTextEditorContent?: (content: string, type?: 'ai-insight' | 'analysis-result' | 'general') => void; // Allow parent to add content
 }
 
 const inputClasses = "block w-full rounded-md border border-gray-300 p-2 bg-white shadow-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-teal-200/50";
 const labelClasses = "block text-sm font-medium text-gray-700 mb-1";
 
 const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
-    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, onChange, sections, projectData, statusMessage, onPin }) => {
+    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, onChange, sections, projectData, statusMessage, onPin, onAddTextEditorContent }) => {
     
     //#region Variables & Constants
     const [element, setElement] = useState<Element>(elementData);
@@ -79,6 +81,18 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     
     // Candidate source elements: saved elements in the same project (exclude self)
     const [fetchedCandidateElements, setFetchedCandidateElements] = useState<any[]>([]);
+    
+    // Text Editor state
+    const [textEditorContent, setTextEditorContent] = useState<any[]>(
+        elementData.documentContent || [
+            {
+                type: 'paragraph',
+                children: [{ text: 'Element analysis and Design output...' }],
+            },
+        ]
+    );
+    const textEditorRef = useRef<TextEditorHandle>(null);
+    const [hasUnsavedDocumentChanges, setHasUnsavedDocumentChanges] = useState(false);
     //#endregion
 
 
@@ -198,6 +212,37 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             // Always sync design results from parent (these come from API responses)
             if (elementData.designResults !== prev.designResults) {
                 updated.designResults = elementData.designResults;
+                
+                // Auto-populate text editor with analysis results when they're received
+                if (elementData.designResults && elementData.designResults.length > 0) {
+                    const governingResult = elementData.designResults.reduce((max, current) => {
+                        const maxUtil = Math.max(
+                            max.capacity_data.utilization.bending_strength,
+                            max.capacity_data.utilization.shear_strength
+                        );
+                        const currentUtil = Math.max(
+                            current.capacity_data.utilization.bending_strength,
+                            current.capacity_data.utilization.shear_strength
+                        );
+                        return currentUtil > maxUtil ? current : max;
+                    });
+                    
+                    const status = governingResult.capacity_data.status;
+                    const bendingUtil = (governingResult.capacity_data.utilization.bending_strength * 100).toFixed(1);
+                    const shearUtil = (governingResult.capacity_data.utilization.shear_strength * 100).toFixed(1);
+                    
+                    const analysisText = `Design analysis completed for ${elementData.name || 'element'}. ` +
+                        `Status: ${status}. ` +
+                        `Governing combination: ${governingResult.combinationName || 'N/A'}. ` +
+                        `Bending utilization: ${bendingUtil}%, Shear utilization: ${shearUtil}%. ` +
+                        (status === 'FAIL' ? 'Element requires attention - utilization exceeds limits.' : 
+                         status === 'PASS' ? 'Element is adequately designed.' : 'Review required.');
+                    
+                    // Add to text editor after a brief delay to ensure state is updated
+                    setTimeout(() => {
+                        appendToTextEditor(analysisText, 'analysis-result');
+                    }, 100);
+                }
             }
             
             // Always sync saved state and IDs from parent
@@ -214,19 +259,22 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             // Only sync other properties if this is the initial load (when prev has default/empty values)
             // or if the parent data is significantly different (like from AI actions)
             const isInitialLoad = !prev.name || prev.name === elementData.name;
-            const hasStructuralChanges = elementData.appliedLoads?.length !== prev.appliedLoads?.length ||
-                                       elementData.loadCombinations?.length !== prev.loadCombinations?.length ||
-                                       elementData.supports?.length !== prev.supports?.length;
+            
+            // Check for both length changes AND content changes (for AI edits that don't change array length)
+            const hasAppliedLoadsChanges = elementData.appliedLoads && JSON.stringify(elementData.appliedLoads) !== JSON.stringify(prev.appliedLoads);
+            const hasLoadCombinationsChanges = elementData.loadCombinations && JSON.stringify(elementData.loadCombinations) !== JSON.stringify(prev.loadCombinations);
+            const hasSupportsChanges = elementData.supports && JSON.stringify(elementData.supports) !== JSON.stringify(prev.supports);
+            const hasStructuralChanges = hasAppliedLoadsChanges || hasLoadCombinationsChanges || hasSupportsChanges;
             
             if (isInitialLoad || hasStructuralChanges) {
                 // Sync structural properties from parent (AI changes, etc.)
-                if (elementData.appliedLoads && JSON.stringify(elementData.appliedLoads) !== JSON.stringify(prev.appliedLoads)) {
+                if (hasAppliedLoadsChanges) {
                     updated.appliedLoads = elementData.appliedLoads;
                 }
-                if (elementData.loadCombinations && JSON.stringify(elementData.loadCombinations) !== JSON.stringify(prev.loadCombinations)) {
+                if (hasLoadCombinationsChanges) {
                     updated.loadCombinations = elementData.loadCombinations;
                 }
-                if (elementData.supports && JSON.stringify(elementData.supports) !== JSON.stringify(prev.supports)) {
+                if (hasSupportsChanges) {
                     updated.supports = elementData.supports;
                 }
                 
@@ -244,6 +292,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     updated.sectionName = elementData.sectionName;
                     updated.sections = elementData.sections || [];
                 }
+                
+                // Sync document content if it exists and is different
+                if (elementData.documentContent && JSON.stringify(elementData.documentContent) !== JSON.stringify(prev.documentContent)) {
+                    updated.documentContent = elementData.documentContent;
+                }
             }
             
             return updated;
@@ -256,6 +309,67 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             setIsSaved(elementData.isSaved || false);
         }
     }, [elementData.isSaved]);
+
+    // Sync text editor content when element's document content changes
+    useEffect(() => {
+        if (element.documentContent && JSON.stringify(element.documentContent) !== JSON.stringify(textEditorContent)) {
+            setTextEditorContent(element.documentContent);
+        }
+    }, [element.documentContent]);
+
+    // Auto-resolve section properties when sectionName exists but sections array is empty
+    useEffect(() => {
+        if (element.sectionName && (!element.sections || element.sections.length === 0)) {
+            const matchingSection = sections.find(s => 
+                s.name.toLowerCase() === element.sectionName.toLowerCase()
+            );
+            if (matchingSection) {
+                console.log(`Auto-resolving section: ${element.sectionName} -> found properties`);
+                updateElement(prev => ({
+                    ...prev,
+                    sections: [matchingSection]
+                }));
+            }
+        }
+    }, [element.sectionName, sections]);
+
+    // Auto-generate descriptions for loads that don't have them
+    useEffect(() => {
+        const loadsNeedingDescriptions = element.appliedLoads.some(load => 
+            !load.description || load.description.trim() === ''
+        );
+        
+        if (loadsNeedingDescriptions) {
+            const generateSmartDescription = (load: any, index: number) => {
+                if (load.description && load.description.trim() !== '') {
+                    return load.description; // Keep existing description
+                }
+                
+                const elementType = element.type?.toLowerCase() || '';
+                const loadCases = load.forces?.map((f: any) => f.loadCase).join(' + ') || 'Load';
+                const typeStr = load.type === 'PointLoad' ? 'Point Load' : 
+                              load.type === 'UDL' ? 'UDL' : 'Load';
+                
+                if (elementType.includes('floor') || elementType.includes('joist')) {
+                    return `Floor ${loadCases} ${typeStr}`;
+                } else if (elementType.includes('roof') || elementType.includes('rafter')) {
+                    return `Roof ${loadCases} ${typeStr}`;
+                } else if (elementType.includes('beam')) {
+                    return `Beam ${loadCases} ${typeStr}`;
+                } else {
+                    return `${loadCases} ${typeStr}`;
+                }
+            };
+
+            updateElement(prev => ({
+                ...prev,
+                appliedLoads: prev.appliedLoads.map((load, index) => ({
+                    ...load,
+                    description: generateSmartDescription(load, index)
+                }))
+            }));
+        }
+    }, [element.appliedLoads, element.type]);
     //#endregion
 
 
@@ -357,19 +471,33 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
      */
     const handleSave = async () => {
         try {
+            // Include text editor content in the element before saving
+            const elementWithDocument = {
+                ...element,
+                documentContent: textEditorContent,
+                documentPlainText: getDocumentPlainText()
+            };
+            
             // Perform save via parent
-            await onSave(element);
+            await onSave(elementWithDocument);
+            
             // Re-fetch from backend to include any reaction data
             if (element.projectId && element.id) {
                 try {
                     const fresh = await projectService.getElement(element.projectId, element.id);
                     setElement(fresh);
+                    
+                    // If the fresh element has document content, update the text editor
+                    if (fresh.documentContent) {
+                        setTextEditorContent(fresh.documentContent);
+                    }
                 } catch (fetchErr) {
                     console.warn('Failed to reload element after save:', fetchErr);
                 }
             }
             // Mark as saved
             setIsSaved(true);
+            setHasUnsavedDocumentChanges(false);
         } catch (error) {
             console.error('Save failed:', error);
         }
@@ -515,6 +643,22 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
     
     const addAppliedLoad = () => {
+        // Generate smart load description based on element type and context
+        const generateLoadDescription = () => {
+            const elementType = element.type?.toLowerCase() || '';
+            const loadCount = element.appliedLoads.length + 1;
+            
+            if (elementType.includes('floor') || elementType.includes('joist')) {
+                return 'Floor Dead + Live Load';
+            } else if (elementType.includes('roof') || elementType.includes('rafter')) {
+                return 'Roof Dead + Live Load';
+            } else if (elementType.includes('beam')) {
+                return 'Beam Load Combination';
+            } else {
+                return `Applied Load ${loadCount}`;
+            }
+        };
+
         updateElement(prev => ({
             ...prev,
             appliedLoads: [
@@ -522,6 +666,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 {
                     type: LoadType.UDL,
                     position: ['0', String(prev.span)],
+                    description: generateLoadDescription(),
                     forces: [
                         { magnitude: [0], loadCase: LoadCaseType.Dead },
                         { magnitude: [0], loadCase: LoadCaseType.Live }
@@ -670,6 +815,48 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
 
     //#region Validation & Helper function 
+
+    /** Helper function to append AI-generated content to the text editor
+    * @param content The text content to append
+    * @param type The type of content (e.g., 'ai-insight', 'analysis-result')
+    */
+    const appendToTextEditor = (content: string, type: 'ai-insight' | 'analysis-result' | 'general' = 'general') => {
+        const timestamp = new Date().toLocaleString();
+        const newBlock = {
+            type: 'paragraph',
+            children: [
+                { text: `[${timestamp}] `, bold: true },
+                { text: `${type.toUpperCase()}: `, bold: true, italic: true },
+                { text: content }
+            ]
+        };
+        
+        setTextEditorContent(prev => [...prev, newBlock]);
+    };
+
+    // Expose appendToTextEditor to parent component
+    useEffect(() => {
+        if (onAddTextEditorContent) {
+            // This is a bit of a hack to expose the function to parent - 
+            // in a real implementation you might want to use useImperativeHandle or a ref
+            (onAddTextEditorContent as any).current = appendToTextEditor;
+        }
+    }, [onAddTextEditorContent]);
+
+    /** Helper function to extract plain text from the text editor content
+    * @returns Plain text string representation of the document
+    */
+    const getDocumentPlainText = (): string => {
+        return textEditorContent.map(block => 
+            block.children.map((child: any) => child.text).join('')
+        ).join('\n');
+    };
+
+    /** Handle text editor content changes */
+    const handleTextEditorChange = (newContent: any[]) => {
+        setTextEditorContent(newContent);
+        setHasUnsavedDocumentChanges(true);
+    };
 
     /** Utility function to format magnitude values with appropriate units
     * @param magnitude The magnitude value(s) to format.
@@ -853,6 +1040,36 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
                 </div>
             </FormCollapsibleSectionWithStagedSummary>
+
+            {/* Element Data - Wraps all detailed form sections */}
+            <FormCollapsibleSectionWithStagedSummary 
+                title="Element Input Data" 
+                defaultStage="preview"
+                color="bg-slate-50/50"
+                summaryItems={[
+                    { 
+                        label: 'Design Params', 
+                        value: `${element.designParameters?.materialType || 'Timber'} | ${element.designParameters?.countryOfStandard || 'NZ'} | ${element.designParameters?.lateralRestraintSpacing || '1'}m` 
+                    },
+                    { 
+                        label: 'Sections', 
+                        value: element.sections || [], 
+                        arrayDisplayType: 'count' 
+                    },
+                    { 
+                        label: 'Supports', 
+                        value: element.supports.length + ' supports | ' + element.supports.map(s => s.fixity).join(', ').substring(0, 20) + (element.supports.map(s => s.fixity).join(', ').length > 20 ? '...' : '')
+                    },
+                    { 
+                        label: 'Loads', 
+                        value: element.appliedLoads.length + ' loads | ' + element.appliedLoads.map(l => l.type).join(', ').substring(0, 15) + (element.appliedLoads.map(l => l.type).join(', ').length > 15 ? '...' : '')
+                    },
+                    { 
+                        label: 'Combinations', 
+                        value: visibleLoadCombinations.length + ' combos | ' + visibleLoadCombinations.map(c => c.combinationType).join(', ').substring(0, 15) + (visibleLoadCombinations.map(c => c.combinationType).join(', ').length > 15 ? '...' : '')
+                    }
+                ]}
+            >
 
             {/* Design Parameters Section */}
             <FormCollapsibleSectionWithStagedSummary 
@@ -1766,6 +1983,8 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 </div>
             </FormCollapsibleSectionWithStagedSummary>
 
+            </FormCollapsibleSectionWithStagedSummary>
+
             {/* Design Results Display */}
             {element.designResults && element.designResults.length > 0 && (
                 <DesignResultsDisplay 
@@ -1773,6 +1992,40 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     isVisible={true} 
                 />
             )}
+
+            {/* Document View */}
+            <FormCollapsibleSectionWithStagedSummary 
+                title="Document View" 
+                color="bg-amber-50/50" 
+                defaultStage="preview"
+                summaryItems={[
+                    { 
+                        label: 'Content', 
+                        value: textEditorContent.map(block => 
+                            block.children.map((child: any) => child.text).join('')
+                        ).join(' ').substring(0, 100) + (
+                            textEditorContent.map(block => 
+                                block.children.map((child: any) => child.text).join('')
+                            ).join(' ').length > 100 ? '...' : ''
+                        )
+                    },
+                    { 
+                        label: 'Word Count', 
+                        value: textEditorContent.map(block => 
+                            block.children.map((child: any) => child.text).join('')
+                        ).join(' ').split(' ').filter(word => word.length > 0).length 
+                    }
+                ]}
+            >
+                <TextEditor
+                    ref={textEditorRef}
+                    content={textEditorContent}
+                    onChange={handleTextEditorChange}
+                    title={`${element.name || 'Element'} Document${hasUnsavedDocumentChanges ? ' *' : ''}`}
+                    placeholder="Element analysis and design output"
+                    className="p-4"
+                />
+            </FormCollapsibleSectionWithStagedSummary>
 
             {/* Pin to canvas is handled by the chat overlay; parent will call onPin when requested. */}
 
@@ -1818,9 +2071,14 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     type="button" 
                     onClick={handleSave} 
                     disabled={statusMessage?.type === 'loading'} 
-                    className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+                    className={`flex items-center gap-2 px-5 py-2.5 font-semibold rounded-lg transition-colors disabled:bg-gray-400 ${
+                        hasUnsavedDocumentChanges || !isSaved
+                        ? 'bg-orange-600 hover:bg-orange-700 text-white' // Unsaved changes
+                        : 'bg-blue-600 hover:bg-blue-700 text-white' // No changes
+                    }`}
                 >
-                    <SaveIcon className="w-5 h-5"/> {isSaved ? 'Update' : 'Save'}
+                    <SaveIcon className="w-5 h-5"/> 
+                    {hasUnsavedDocumentChanges ? 'Save Document' : (isSaved ? 'Update' : 'Save')}
                 </button>
                 <button 
                     type="button" 

@@ -1,8 +1,8 @@
 // components/chat/MainChatInterface.tsx: The main UI for the chat, including messages and input controls.
 
 import React, { useRef, useEffect, useState } from 'react';
-import { ChatMessage, Action, StatusMessage } from '../../customTypes/types';
-import { BeamInput, Element as StructuralElement } from '../../customTypes/structuralElement';
+import { ChatMessage, Action,  } from '../../customTypes/types';
+import { BeamInput, StatusMessage,  Element as StructuralElement } from '../../customTypes/structuralElement';
 import { SectionProperties } from '../../customTypes/SectionProperties';
 import { BeamInputForm } from '../structuralEngineering/BeamInputForm';
 import { BeamAnalysisDisplay, type BeamAnalysisDisplayHandle } from '../structuralEngineering/BeamAnalysisDisplay';
@@ -162,7 +162,7 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
         msg.type === 'beam_output_display'
         // && msg.beamInputsData?.[0]
         // && activeBeamNames.has(msg.beamInputsData[0].Name)
-    );
+    ) || elementFormsCount > 0;
 
     // Glow state for Download All (pulse for 4s)
     const [downloadGlowing, setDownloadGlowing] = useState(false);

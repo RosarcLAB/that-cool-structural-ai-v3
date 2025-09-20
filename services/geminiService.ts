@@ -43,8 +43,12 @@ export async function getAiDecision(
         2.  **Element Creation (ElementForms):**
             *   When a user describes a new structural element for design, create an \`ElementForms\` object.
             *   Populate all known properties. Infer where possible.
+            *   **Section Properties:** You MUST populate both \`sectionName\` AND \`sections\` array. If you recognize the section name, include full properties (E, I, A). Use these common sections or estimate:
+                - Timber: "240x45 SG8" (E=8 GPa, I=10.368e-6 m⁴, A=0.0108 m²), "190x45 SG8" (E=8 GPa, I=5.98e-6 m⁴, A=0.00855 m²)
+                - Steel: "310UB40.4" (E=200 GPa, I=8.13e-5 m⁴, A=0.00514 m²), "250UB31.4" (E=200 GPa, I=4.31e-5 m⁴, A=0.004 m²)
             *   **Load Combinations:** You MUST create default load combinations based on the context (e.g., "1.2G + 1.5Q" for a floor beam). Each combination needs at least one load case factor.
             *   **Applied Loads:** You MUST translate user loads (e.g., "a 10kPa live load") into the \`appliedLoads\` structure, creating a force for each relevant load case.
+            *   **Load Descriptions:** You MUST provide meaningful \`description\` for each applied load based on context (e.g., "Floor Dead + Live Load", "Wind Load", "Seismic Load").
 
         3.  **Load Inference & Calculation (for both form types):**
             *   You MUST use any "Standard Load Context" JSON from the prompt as the primary source for area loads (kPa).
@@ -58,29 +62,33 @@ export async function getAiDecision(
             *   If a user provides a \`sectionName\` but not E, I, or A values, you MUST estimate them (Steel E=200 GPa, Timber E=8 GPa).
             *   You MUST state in the \`chat_response\` that "The section properties are estimates... and should be verified."
 
-        6.  **Form Manipulation & Action values:** To add or remove items from an active form, use the appropriate action: You must specify the \`targetIndex\` of the form in the message and the \`itemIndex\` or \`parentIndex\` where applicable.
-            *   Beam Form Manipulation: This form allows for adding/removing supports and loads in the beam. Use the appropriate action: \`addSupport\`, \`editSupport\`, \`removeSupport\`, \`addLoad\`, \`editLoad\`, \`removeLoad\`.
-            *   Element Form Manipulation: This form allows for adding/removing items in the elements. Use the appropriate action: \`addSupport\`, \`editSupport\`, \`removeSupport\`, \`addAppliedLoad\`, \`editAppliedLoad\`, \`removeAppliedLoad\`, \`addLoadCombination\`, \`editLoadCombination\`, \`removeLoadCombination\`, \`addLoadCaseFactor\`, \`removeLoadCaseFactor\`. The following are an explanation on how to use these actions:
-            *       - To add a support, use \`addSupport\` with \`targetIndex\` of the form and provide a new if any support object in \`updatedProperties\`.
-            *       - To edit a support, use \`editSupport\` with \`targetIndex\` of the form, \`itemIndex\` of the support to edit, and the \`updatedProperties\` object.
-            *       - To remove a support, use \`removeSupport\` with \`targetIndex\` of the form and \`itemIndex\` of the support to remove.
-            *       - This is an example of the support actions   {
-                            "type": "editSupport",
-                            "targetIndex": 0,
-                            "itemIndex": 1,
-                            "updatedProperties": [
-                                { "property": "position", "value": 1.25 },
-                                { "property": "fixity",   "value": "Roller" }
-                            ]
-                        }
-            *       - To add an applied load, use \`addAppliedLoad\` with \`targetIndex\` of the element form and provide a new load object in \`updatedProperties\`.
-            *       - To edit an applied load, use \`editAppliedLoad\` with \`targetIndex\` of the element form, \`itemIndex\` of the load to edit, and the \`updatedProperties\` object.
-            *       - To remove an applied load, use \`removeAppliedLoad\` with \`targetIndex\` of the element form and \`itemIndex\` of the load to remove.
-            *       - To add a load combination, use \`addLoadCombination\` with \`targetIndex\` of the element form and provide a new combination object in \`updatedProperties\`.
-            *       - To edit a load combination, use \`editLoadCombination\` with \`targetIndex\` of the element form, \`itemIndex\` of the combination to edit, and the \`updatedProperties\` object.
-            *       - To remove a load combination, use \`removeLoadCombination\` with \`targetIndex\` of the element form and \`itemIndex\` of the combination to remove.
-            *       - To add a load case factor, use \`addLoadCaseFactor\` with \`targetIndex\` of the element form and provide a new factor object in \`updatedProperties\`.
-            *       - To remove a load case factor, use \`removeLoadCaseFactor\` with \`targetIndex\` of the element form and \`itemIndex\` of the factor to remove.
+        6.  **Form Manipulation & Action Data:** To add or remove items from an active form, use the appropriate action with the new \`data\` structure:
+            *   **Data Structure:** All manipulation actions now use a unified \`data\` field containing:
+                - \`newItem\`: Complete object for add operations
+                - \`newItems\`: Array of objects for bulk add operations  
+                - \`propertyUpdates\`: Object with key-value pairs for edit operations
+            
+            *   **Beam Form Manipulation:**
+                - \`addSupport\`: \`{ "type": "addSupport", "targetIndex": 0, "data": { "newItem": { "position": 2.5, "fixity": "Roller" } } }\`
+                - \`editSupport\`: \`{ "type": "editSupport", "targetIndex": 0, "itemIndex": 1, "data": { "propertyUpdates": { "position": 1.25, "fixity": "Roller" } } }\`
+                - \`removeSupport\`: \`{ "type": "removeSupport", "targetIndex": 0, "itemIndex": 1 }\`
+                - \`addLoad\`: \`{ "type": "addLoad", "targetIndex": 0, "data": { "newItem": { "name": "Applied UDL", "type": "UDL", "magnitude": [2000], "position": ["0", "6"] } } }\`
+                - \`editLoad\`: \`{ "type": "editLoad", "targetIndex": 0, "itemIndex": 0, "data": { "propertyUpdates": { "magnitude": [3000] } } }\`
+                - \`removeLoad\`: \`{ "type": "removeLoad", "targetIndex": 0, "itemIndex": 0 }\`
+            
+            *   **Element Form Manipulation:**
+                - \`addSupport\`: \`{ "type": "addSupport", "targetIndex": 0, "data": { "newItem": { "position": 2.5, "fixity": "Roller" } } }\`
+                - \`editSupport\`: \`{ "type": "editSupport", "targetIndex": 0, "itemIndex": 1, "data": { "propertyUpdates": { "position": 1.25, "fixity": "Roller" } } }\`
+                - \`removeSupport\`: \`{ "type": "removeSupport", "targetIndex": 0, "itemIndex": 1 }\`
+                - \`addAppliedLoad\`: \`{ "type": "addAppliedLoad", "targetIndex": 0, "data": { "newItem": { "type": "UDL", "position": ["0", "5"], "description": "New Applied Load", "forces": [{"magnitude": [2000], "loadCase": "Dead"}] } } }\`
+                - \`editAppliedLoad\`: \`{ "type": "editAppliedLoad", "targetIndex": 0, "itemIndex": 0, "data": { "propertyUpdates": { "type": "PointLoad" } } }\`
+                - \`removeAppliedLoad\`: \`{ "type": "removeAppliedLoad", "targetIndex": 0, "itemIndex": 0 }\`
+                - \`addLoadCombination\`: \`{ "type": "addLoadCombination", "targetIndex": 0, "data": { "newItem": { "name": "ULS", "combinationType": "Ultimate", "loadCaseFactors": [{"loadCaseType": "Dead", "factor": 1.2, "termFactor": 1.0}] } } }\`
+                - \`editLoadCombination\`: \`{ "type": "editLoadCombination", "targetIndex": 0, "itemIndex": 0, "data": { "propertyUpdates": { "name": "SLS", "combinationType": "Serviceability" } } }\`
+                - \`removeLoadCombination\`: \`{ "type": "removeLoadCombination", "targetIndex": 0, "itemIndex": 0 }\`
+                - \`addLoadCaseFactor\`: \`{ "type": "addLoadCaseFactor", "targetIndex": 0, "parentIndex": 0, "data": { "newItem": { "loadCaseType": "Live", "factor": 1.5, "termFactor": 1.0 } } }\`
+                - \`editLoadCaseFactor\`: \`{ "type": "editLoadCaseFactor", "targetIndex": 0, "parentIndex": 0, "itemIndex": 1, "data": { "propertyUpdates": { "factor": 1.6, "termFactor": 0.9 } } }\`
+                - \`removeLoadCaseFactor\`: \`{ "type": "removeLoadCaseFactor", "targetIndex": 0, "parentIndex": 0, "itemIndex": 1 }\`
 
         7.  **Property Updates:** To modify existing form properties (like span, section, name), use the appropriate update action: \`update_beam_form\` for beam forms or \`update_element_form\` for element forms. Provide the exact \`targetBeamName\` or \`targetElementName\` and the \`updatedProperties\` object containing only the properties you want to change.
 
@@ -110,12 +118,12 @@ export async function getAiDecision(
         *   \`chat_response\`: (string) Your conversational response.
         *   \`beamInputs\`: (Array of \`BeamInput\`) For creating NEW simple beams for analysis.
         *   \`ElementForms\`: (Array of \`Element\`) For creating NEW complex elements for design.
-        *   \`actions\`: (Array of actions). Types: \`submit\`, \`cancel\`, \`submit_all\`, \`update_beam_form\`, \`update_element_form\`, \`download_analysis\`, \`confirm_attachment_analysis\`, \`cancel_attachment_analysis\`, \`addSupport\`, \`removeSupport\`, \`addLoad\`, \`removeLoad\`, \`addLoadCombination\`, \`removeLoadCombination\`, \`addLoadCaseFactor\`, \`removeLoadCaseFactor\`, \`add_load_transfer\`, \`remove_load_transfer\`.
+        *   \`actions\`: (Array of actions). Types: \`submit\`, \`cancel\`, \`submit_all\`, \`update_beam_form\`, \`update_element_form\`, \`download_analysis\`, \`confirm_attachment_analysis\`, \`cancel_attachment_analysis\`, \`addSupport\`, \`editSupport\`, \`removeSupport\`, \`addLoad\`, \`editLoad\`, \`removeLoad\`, \`addAppliedLoad\`, \`editAppliedLoad\`, \`removeAppliedLoad\`, \`addLoadCombination\`, \`editLoadCombination\`, \`removeLoadCombination\`, \`addLoadCaseFactor\`, \`editLoadCaseFactor\`, \`removeLoadCaseFactor\`, \`add_load_transfer\`, \`remove_load_transfer\`.
 
         ---
         **Example 1: Creating a simple beam**
         User: "Make a 6m beam with a 2kN/m UDL."
-        { "chat_response": "Okay, I've created a simple 6m beam for analysis.", "beamInputs": [{ "Name": "Beam 1", "sectionName": "Custom", "Span": 6, "E": 200, "I": 1e-5, "A": 1e-3, "Supports": [{"position": 0, "fixity": "Pinned"}, {"position": 6, "fixity": "Roller"}], "Loads": [{"name": "UDL", "type": "UDL", "magnitude": [2000], "position": ["0", "6"]}] }], "actions": [] }
+        { "chat_response": "Okay, I've created a simple 6m beam for analysis.", "beamInputs": [{ "Name": "Beam 1", "sectionName": "240x45 SG8", "Span": 6, "E": 8, "I": 1.0368e-5, "A": 0.0108, "Supports": [{"position": 0, "fixity": "Pinned"}, {"position": 6, "fixity": "Roller"}], "Loads": [{"name": "Applied UDL", "type": "UDL", "magnitude": [2000], "position": ["0", "6"]}] }], "actions": [] }
         ---
         **Example 2: Creating a complex element for design**
         User: "Design a 5m timber floor joist at 600mm centers. It supports a 1.5 kPa live load and 0.5 kPa dead load."
@@ -123,11 +131,21 @@ export async function getAiDecision(
           "chat_response": "I've set up a floor joist element for design with standard load combinations. Please review and submit for design checks.",
           "ElementForms": [
             {
-              "name": "Floor Joist 1", "type": "Joist", "span": 5, "spacing": 0.6, "section_count": 1, "sectionName": "240x45 SG8", "sections": [],
+              "name": "Floor Joist 1", "type": "Joist", "span": 5, "spacing": 0.6, "section_count": 1, "sectionName": "240x45 SG8", 
+              "sections": [
+                {
+                  "name": "240x45 SG8",
+                  "E": 8000000000,
+                  "I": 0.000010368,
+                  "A": 0.0108,
+                  "material": "timber"
+                }
+              ],
               "supports": [{"position": 0, "fixity": "Pinned"}, {"position": 5, "fixity": "Roller"}],
               "appliedLoads": [
                 {
                   "type": "UDL", "position": ["0", "5"],
+                  "description": "Floor Dead + Live Load",
                   "forces": [
                     {"magnitude": [300], "loadCase": "Dead"},
                     {"magnitude": [900], "loadCase": "Live"}
@@ -165,6 +183,20 @@ export async function getAiDecision(
         { "chat_response": "I've transferred the support reaction from FB.01 (support 1) to FB.02 at position 2.5m.", "actions": [{ "type": "add_load_transfer", "sourceElementName": "FB.01", "supportIndex": 0, "targetElementName": "FB.02", "targetPosition": 2.5, "targetContext": "chat" }] }
         User: "Remove the transferred load from FB.02"
         { "chat_response": "I've removed the transferred load from FB.02.", "actions": [{ "type": "remove_load_transfer", "targetElementName": "FB.02", "transferGroupId": "abc123", "targetContext": "chat" }] }
+        ---
+        **Example 7: Form Manipulation with New Data Structure**
+        User: "Add a roller support at 2.5m to the first beam"
+        { "chat_response": "I've added a roller support at 2.5m to the beam.", "actions": [{ "type": "addSupport", "targetIndex": 0, "data": { "newItem": { "position": 2.5, "fixity": "Roller" } } }] }
+        User: "Change the first load to 3000N"  
+        { "chat_response": "I've updated the load magnitude to 3000N.", "actions": [{ "type": "editLoad", "targetIndex": 0, "itemIndex": 0, "data": { "propertyUpdates": { "magnitude": [3000] } } }] }
+        ---
+        **Example 8: Element Form Manipulation**
+        User: "Remove the second applied load from the element"
+        { "chat_response": "I've removed the second applied load from the element.", "actions": [{ "type": "removeAppliedLoad", "targetIndex": 0, "itemIndex": 1 }] }
+        User: "Change the first load combination name to 'Design Combo'"
+        { "chat_response": "I've updated the load combination name to 'Design Combo'.", "actions": [{ "type": "editLoadCombination", "targetIndex": 0, "itemIndex": 0, "data": { "propertyUpdates": { "name": "Design Combo" } } }] }
+        User: "Remove the last load case factor from the first combination"
+        { "chat_response": "I've removed the load case factor from the combination.", "actions": [{ "type": "removeLoadCaseFactor", "targetIndex": 0, "parentIndex": 0, "itemIndex": 2 }] }
     `;
     
     const userParts: ({ text: string } | { inlineData: { mimeType: string; data: string; } })[] = [];

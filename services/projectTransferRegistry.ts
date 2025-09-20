@@ -79,7 +79,54 @@ class ProjectTransferRegistry {
     const support = sourceEl.supports?.[supportIndex];
     if (!support) throw new Error('Support not found');
 
-    //const verticalN = (support.reaction?.Fy?.forces[0]?.magnitude[0] ?? 0);
+    // Check if source element has been designed and has reaction data
+    if (!sourceEl.designResults) {
+      throw new Error(`Source element "${sourceEl.name}" must be designed first to generate reaction data.`);
+    }
+
+    // Strategy 1: Try to get reaction data from support.reaction (primary approach)
+    let reactionForces: any[] = [];
+
+    if (support.reaction?.Fy?.forces && support.reaction.Fy.forces.length > 0) {
+      reactionForces = support.reaction.Fy.forces;
+    }
+    // Strategy 2: Try to get reaction data from element.reactions (fallback approach)
+    else if (sourceEl.reactions && Object.keys(sourceEl.reactions).length > 0) {
+      // Find reactions for this support position
+      const supportPosition = support.position;
+      const reactionEntry = Object.entries(sourceEl.reactions).find(([pos]) => 
+        Math.abs(parseFloat(pos) - supportPosition) < 0.001
+      );
+      
+      if (reactionEntry) {
+        const [position, forces] = reactionEntry;
+        
+        // Handle different possible structures
+        let fx = 0, fy = 0, mz = 0;
+        
+        if (Array.isArray(forces) && forces.length >= 3) {
+          [fx, fy, mz] = forces as number[];
+        } else if (typeof forces === 'object' && forces !== null) {
+          fx = (forces as any).fx || (forces as any).Fx || 0;
+          fy = (forces as any).fy || (forces as any).Fy || 0;
+          mz = (forces as any).mz || (forces as any).Mz || 0;
+        }
+        
+        // Create reaction force structure from element.reactions
+        if (fy !== 0) {
+          reactionForces = [{
+            magnitude: [Math.abs(fy)],
+            loadCase: 'Dead' // Default load case
+          }];
+        }
+      }
+    }
+
+    // Validation
+    if (reactionForces.length === 0) {
+      throw new Error(`No reaction forces found for support ${supportIndex + 1} of element "${sourceEl.name}". Element must be properly analyzed to generate reaction data.`);
+    }
+
     const groupId = uuidv4();
     const meta: TransferMeta = {
       transferGroupId: groupId,
@@ -91,17 +138,22 @@ class ProjectTransferRegistry {
 
     const posOnTarget = mapPosToTarget(sourceEl.span  ?? 0);
 
-    // Grab all Fy reaction forces. Future implement Fx and Mz
-    const reactionForces = support.reaction?.Fy?.forces || [];
-
     // Build dynamic forces array from reaction forces
     const canonicalForces: SyncedForce[] = [];
-    reactionForces.forEach(f => {
-      canonicalForces.push({
-        magnitude: f.magnitude,
-        loadCase: f.loadCase
-      });
+    reactionForces.forEach((f) => {
+      // Validate force structure
+      if (f.magnitude && Array.isArray(f.magnitude) && f.magnitude.length > 0) {
+        canonicalForces.push({
+          magnitude: f.magnitude,
+          loadCase: f.loadCase
+        });
+      }
     });
+
+    // Final validation - ensure we have valid forces
+    if (canonicalForces.length === 0) {
+      throw new Error(`No valid reaction forces found for support ${supportIndex + 1} of element "${sourceEl.name}".`);
+    }
 
     const canonical: SyncedAppliedLoad = {
       id: `t-${groupId}`,

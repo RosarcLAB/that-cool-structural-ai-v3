@@ -164,7 +164,7 @@ export const DesignResultsDisplay: React.FC<DesignResultsDisplayProps> = ({ resu
   ];
 
   return (
-    <FormCollapsibleSectionWithStagedSummary title="Design Results" color="bg-teal-50/50" defaultStage="preview" summaryItems={summaryItems}>
+    <FormCollapsibleSectionWithStagedSummary title="Element Output Data" color="bg-teal-50/50" defaultStage="preview" summaryItems={summaryItems}>
       <div className="flex flex-col gap-2">
         {results.map((result, index) => (
             <FormCollapsibleSectionWithStagedSummary
