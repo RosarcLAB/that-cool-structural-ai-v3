@@ -80,6 +80,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
       {/* Project Edit Modal */}
       <ProjectForm
         project={project}
+        mode="edit"
         isOpen={isModalOpen}
         onClose={handleCloseModal}
         onSave={handleSaveProject}

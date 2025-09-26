@@ -36,13 +36,14 @@ interface StructuralElementFormProps {
     statusMessage?: StatusMessage | null; // Status messages from parent
     onPin?: () => void; // optional callback to pin this form's element to the Canvas
     onAddTextEditorContent?: (content: string, type?: 'ai-insight' | 'analysis-result' | 'general') => void; // Allow parent to add content
+    onRegisterDownload?: (downloadCallback: () => void) => void; // Callback to register download function
 }
 
 const inputClasses = "block w-full rounded-md border border-gray-300 p-2 bg-white shadow-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-teal-200/50";
 const labelClasses = "block text-sm font-medium text-gray-700 mb-1";
 
 const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
-    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, onChange, sections, projectData, statusMessage, onPin, onAddTextEditorContent }) => {
+    elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, onChange, sections, projectData, statusMessage, onPin, onAddTextEditorContent, onRegisterDownload }) => {
     
     //#region Variables & Constants
     const [element, setElement] = useState<Element>(elementData);
@@ -52,16 +53,42 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     // A component is "controlled" if an `onChange` prop is provided.
     const isControlled = onChange !== undefined;
     
+    // Track if this is the initial render to avoid calling onChange on mount
+    const isInitialRender = useRef(true);
+    const previousElementRef = useRef<Element>(elementData);
+    
     // Helper function to update element state and notify parent if controlled
     const updateElement = (updater: (prev: Element) => Element) => {
         setElement(prev => {
             const newElement = updater(prev);
-            if (isControlled && onChange) {
-                onChange(newElement); // Propagate the change to the parent if controlled
+            
+            // Only call onChange if this is not the initial render and if controlled
+            // This prevents the infinite loop by not calling onChange during initialization
+            if (!isInitialRender.current && isControlled && onChange) {
+                // Use setTimeout to defer the onChange call to the next tick
+                // This ensures it happens after the current render cycle completes
+                setTimeout(() => {
+                    onChange(newElement);
+                }, 0);
             }
+            
             return newElement;
         });
     };
+    
+    // Mark that initial render is complete after first useEffect
+    useEffect(() => {
+        isInitialRender.current = false;
+    }, []);
+    
+    // Sync with external elementData changes (without triggering onChange)
+    useEffect(() => {
+        // Only update if the elementData prop actually changed from outside
+        if (elementData !== previousElementRef.current && elementData !== element) {
+            previousElementRef.current = elementData;
+            setElement(elementData);
+        }
+    }, [elementData, element]);
     
     // State for the custom combobox
     const [sectionSearchText, setSectionSearchText] = useState(element.sectionName || '');
@@ -169,31 +196,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
        }
     }, [element.supports]);
 
-    // When span changes, update last support position and UDL/Trapezoidal loads positions
-    useEffect(() => {
-        setElement(prev => {
-            const updated = { ...prev };
-            // update last support if roller
-            const lastIdx = updated.supports.length - 1;
-            if (lastIdx >= 0 && updated.supports[lastIdx].fixity === SupportFixityType.Roller) {
-                updated.supports[lastIdx] = { ...updated.supports[lastIdx], position: updated.span };
-            }
-            // update UDL, trapezoidal, and point loads
-            updated.appliedLoads = updated.appliedLoads.map(load => {
-                // UDL & trapezoidal: update end position to new span
-                if ((load.type === LoadType.UDL || load.type === LoadType.TrapezoidalLoad) && load.position.length > 1) {
-                    return { ...load, position: [load.position[0], String(updated.span)] };
-                }
-                // Point loads: reposition to mid-span
-                if (load.type === LoadType.PointLoad) {
-                    return { ...load, position: [String(updated.span / 2)] };
-                }
-                // leave other loads unchanged
-                return load;
-            });
-            return updated;
-        });
-    }, [element.span]);
+
     // Recompute all load combinations whenever applied loads or combinations change
     useEffect(() => {
         const newElement = recomputeAllLoadCombinations(element);
@@ -386,14 +389,49 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         const newValue = isNumeric ? Number(value) : value;
 
         updateElement(prev => {
-            const newElement = { ...prev, [name]: newValue };
+            let newElement = { ...prev, [name]: newValue };
             
-            // When span changes, also set lateralRestraintSpacing to match
+            // When span changes, update support positions and load positions
             if (name === 'span') {
+                const oldSpan = prev.span;
+                const newSpan = Number(value);
+                
+                // Update lateralRestraintSpacing to match new span
                 newElement.designParameters = {
                     ...(prev.designParameters as DesignParameters),
-                    lateralRestraintSpacing: Number(value),
+                    lateralRestraintSpacing: newSpan,
                 } as DesignParameters;
+                
+                // Update the position of the last support if it's a roller
+                const lastIdx = newElement.supports.length - 1;
+                if (lastIdx >= 0 && newElement.supports[lastIdx].fixity === SupportFixityType.Roller) {
+                    const newSupports = [...newElement.supports];
+                    newSupports[lastIdx] = { ...newSupports[lastIdx], position: newSpan };
+                    newElement.supports = newSupports;
+                }
+                
+                // Update load positions based on span change
+                newElement.appliedLoads = newElement.appliedLoads.map(load => {
+                    const newLoad = { ...load };
+                    
+                    if (load.type === LoadType.UDL || load.type === LoadType.TrapezoidalLoad) {
+                        // For UDL and trapezoidal loads, update the end position to match new span
+                        if (newLoad.position.length > 1) {
+                            const newPositions = [...newLoad.position];
+                            newPositions[newPositions.length - 1] = String(newSpan);
+                            newLoad.position = newPositions;
+                        }
+                    } else if (load.type === LoadType.PointLoad) {
+                        // For point loads, scale position proportionally based on span ratio
+                        if (oldSpan > 0 && newLoad.position.length > 0) {
+                            const currentPosition = Number(newLoad.position[0]);
+                            const proportionalPosition = (currentPosition / oldSpan) * newSpan;
+                            newLoad.position = [String(proportionalPosition)];
+                        }
+                    }
+                    
+                    return newLoad;
+                });
             }
             
             return newElement;
@@ -842,6 +880,16 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             (onAddTextEditorContent as any).current = appendToTextEditor;
         }
     }, [onAddTextEditorContent]);
+
+    // Register download callback with parent component
+    useEffect(() => {
+        if (onRegisterDownload && textEditorRef.current) {
+            const downloadCallback = () => {
+                textEditorRef.current?.downloadPdf?.();
+            };
+            onRegisterDownload(downloadCallback);
+        }
+    }, [onRegisterDownload, textEditorRef.current]);
 
     /** Helper function to extract plain text from the text editor content
     * @returns Plain text string representation of the document

@@ -8,6 +8,7 @@ import { BeamInputForm } from '../structuralEngineering/BeamInputForm';
 import { BeamAnalysisDisplay, type BeamAnalysisDisplayHandle } from '../structuralEngineering/BeamAnalysisDisplay';
 // FIX: Changed to default import as StructuralElementForm is now a default export.
 import StructuralElementForm from '../structuralEngineering/StructuralElementForm';
+import { TextEditorHandle } from '../utility/TextEditor';
 import { Spinner } from '../utility/Spinner';
 import { SendIcon, UploadIcon, AddIcon, DocumentMagnifyingGlassIcon, PanelRightOpenIcon, ChatBubbleLeftRightIcon, MicrophoneIcon, CloseIcon, BuildingBlockIcon, ListBulletIcon, PinIcon, OfficePinIcon } from '../utility/icons';
 
@@ -95,6 +96,11 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
     const recognitionRef = useRef<SpeechRecognition | null>(null);
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const isSpeechSupported = !!SpeechRecognitionAPI;
+
+    // Registry for element form download callbacks
+    const elementDownloadCallbacks = useRef<Record<string, () => void>>({});
+
+
 
     useEffect(() => {
         const prevLength = prevMessagesLengthRef.current;
@@ -209,17 +215,40 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
     };
 
     /**
-     * Download all beam output displays in the chat.
+     * Download all beam output displays and element form documents in the chat.
      */
     const downloadAll = () => {
+        console.log("[DEBUG] downloadAll called");
+        console.log("[DEBUG] elementDownloadCallbacks keys:", Object.keys(elementDownloadCallbacks.current));
+        
         messages.forEach(msg => {
+            // Download beam analysis PDFs
             if (
                 msg.type === 'beam_output_display'
-                && msg.beamInputsData?.[0]
-                && activeBeamNames.has(msg.beamInputsData[0].Name)
+                
             ) {
                 const beamName = msg.beamInputsData[0].Name;
                 analysisDisplayRefs.current[beamName]?.downloadPdf?.();
+            }
+            
+            // Download element form PDFs (from TextEditor documents)
+            if (
+                msg.type === 'element_form' 
+                
+            ) {
+                console.log("[DEBUG] Processing element_form message:", msg.id);
+                msg.elementData.forEach((element, index) => {
+                    const elementKey = `${msg.id}-${index}`;
+                    console.log("[DEBUG] Checking element:", elementKey, "exists:", !!elementDownloadCallbacks.current[elementKey]);
+                    
+                    // Check if callback exists instead of relying on isFormActive
+                    if (elementDownloadCallbacks.current[elementKey]) {
+                        console.log("[DEBUG] Calling download for:", elementKey);
+                        elementDownloadCallbacks.current[elementKey]();
+                    } else {
+                        console.log("[DEBUG] No callback found for:", elementKey);
+                    }
+                });
             }
         });
     };
@@ -300,6 +329,10 @@ export const MainChatInterface: React.FC<MainChatInterfaceProps> = ({
                                                 // Provide the list of elements for the element's project so the form can offer project-scoped candidates
                                                 elementDataList={projects.find(p => p.id === element.projectId)?.elements || []}
                                                 onPin={() => handleAddToCanvas(msg, index)}
+                                                onRegisterDownload={(downloadCallback) => {
+                                                    const elementKey = `${msg.id}-${index}`;
+                                                    elementDownloadCallbacks.current[elementKey] = downloadCallback;
+                                                }}
                                             />
                                             {/* Floating Pin Button - Only show when form is active */}
                                             {msg.isFormActive?.[index] && (

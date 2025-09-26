@@ -18,8 +18,7 @@ const ProjectList: React.FC<ProjectListProps> = ({
   onEditProject,
   onDeleteProject,
 }) => {
-  // TODO: Implement these handlers
-  const handleSetDefault = (projectId: string) => console.log('Set default:', projectId);
+   const handleSetDefault = (projectId: string) => console.log('Set default:', projectId);
   const handleSave = (project: Project) => console.log('Save:', project);
   const handleShare = (projectId: string) => console.log('Share:', projectId);
 

@@ -74,14 +74,37 @@ export interface SectionProperties {
   Cw?: number; // Warping constant (mm⁶)
   rx?: number; // Radius of gyration about x-axis (mm)
   ry?: number; // Radius of gyration about y-axis (mm)
+
+  // Reinforced Concrete Specific Properties
+  // Geometric Properties
+  b_mm?: number; // Width of rectangular section (mm)
+  d_mm?: number; // Effective depth to tensile reinforcement (mm)
+  h_mm?: number; // Overall depth/height of section (mm)
+  A_mm2?: number; // Gross cross-sectional area (mm²)
+  I_mm4?: number; // Second moment of area about centroidal axis (mm⁴)
+  A_m2?: number; // Gross cross-sectional area in SI units (m²)
+  I_m4?: number; // Second moment of area in SI units (m⁴)
+  d_prime_mm?: number; // Distance from compression face to compression reinforcement (mm)
+  z_mm?: number; // Lever arm (neutral axis depth) (mm)
+
+  // Reinforcement Properties
+  As_required_mm2?: number; // Required tensile steel area (mm²)
+  As_provided_mm2?: number; // Provided tensile steel area (mm²)
+  As_prime_mm2?: number; // Required compression steel area (mm²)
+  As_provided_prime_mm2?: number; // Provided compression steel area (mm²)
+  As_min_mm2?: number; // Minimum tensile steel area (mm²)
+  As_min_prime_mm2?: number; // Minimum compression steel area (mm²)
+  As_max_mm2?: number; // Maximum tensile steel area (mm²)
+  n_bars?: number; // Number of reinforcement bars provided
+  bar_dia_mm?: number; // Diameter of main tension bars (mm)
+  bar2_dia_mm?: number; // Diameter of links/stirrups (mm)
+  bar3_dia_mm?: number; // Diameter of compression bars (mm)
 }// Cross-section material types
 
 export enum MaterialType {
   Steel = 'steel',
-  Concrete = 'concrete',
-  Timber = 'timber',
-  Aluminum = 'aluminum',
-  Composite = 'composite'
+  ReinforcedConcrete = 'reinforced-concrete',
+  Timber = 'timber'
 }
 
 

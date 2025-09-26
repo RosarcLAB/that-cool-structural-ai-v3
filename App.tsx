@@ -21,6 +21,7 @@ import SignIn from './components/auth/SignIn';
 import { auth } from './config/firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { ProjectsDrawer } from './components/projects/ProjectsDrawer';
+import { ProjectForm } from './components/projects/ProjectForm';
 import { ConfirmDeleteModal } from './components/utility/ConfirmDeleteModal';
 import { UserProfileModal } from './components/auth/UserProfile';
 import { ConfirmationModal } from './components/utility/ConfirmationModal';
@@ -67,6 +68,8 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [isProjectsDrawerOpen, setIsProjectsDrawerOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  // State for project creation modal
+  const [isCreateProjectModalOpen, setIsCreateProjectModalOpen] = useState(false);
   
   // Keep selectedProject in sync with projects array
   useEffect(() => {
@@ -81,6 +84,11 @@ const App: React.FC = () => {
   // State for delete confirmation modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [elementToDelete, setElementToDelete] = useState<StructuralElement | null>(null);
+  // State for project delete confirmation modal  
+  const [isDeleteProjectModalOpen, setIsDeleteProjectModalOpen] = useState(false);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  // State for default project tracking
+  const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null);
   //User profile
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   // State for form cancellation confirmation modal
@@ -178,6 +186,24 @@ const App: React.FC = () => {
       return unsubscribe;
     }
   }, []);
+
+  // Load default project when user changes
+  useEffect(() => {
+    const loadDefaultProject = async () => {
+      if (user) {
+        try {
+          const defaultId = await projectService.getDefaultProject(user.uid);
+          setDefaultProjectId(defaultId);
+        } catch (error) {
+          console.error('Error loading default project:', error);
+        }
+      } else {
+        setDefaultProjectId(null);
+      }
+    };
+
+    loadDefaultProject();
+  }, [user]);
   //#endregion
 
 
@@ -721,14 +747,142 @@ const App: React.FC = () => {
           await refreshSections();
           return true;
       } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
-          addMessage({ sender: 'ai', text: `Failed to delete section: ${errorMessage}`, type: 'error' });
-          return false;
-      }
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      addMessage({ sender: 'ai', text: `Failed to delete section: ${errorMessage}`, type: 'error' });
+      return false;
+    }
   };
+  
+  //#region Project Management Handlers
+  /**
+   * Handle creating a new project
+   * @param projectData The project data (without ID)
+   */
+  const handleCreateProject = useCallback(async (projectData: Omit<Project, 'id'>) => {
+    if (!user) {
+      console.error('User not authenticated');
+      return;
+    }
+
+    try {
+      // Create project with ID generation handled in projectService
+      // projectService.createProject expects ownerId, projectName, and optional additional data
+      const projectId = await projectService.createProject(user.uid, projectData.name, projectData);
+      
+      // Refresh projects list to include the new project
+      await refreshProjects();
+      
+      // Close the modal
+      setIsCreateProjectModalOpen(false);
+      
+      // Find and select the newly created project
+      const updatedProjects = await projectService.getUserProjects(user.uid);
+      const createdProject = updatedProjects.find(p => p.id === projectId);
+      if (createdProject) {
+        setSelectedProject(createdProject);
+      }
+      
+      console.log('Project created successfully:', projectData.name);
+    } catch (error) {
+      console.error('Error creating project:', error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      addMessage({ 
+        sender: 'ai', 
+        text: `Failed to create project: ${errorMessage}`, 
+        type: 'error' 
+      });
+    }
+  }, [user, refreshProjects, addMessage]);
+
+  /**
+   * Handle opening the project creation modal
+   */
+  const handleAddProject = useCallback(() => {
+    setIsCreateProjectModalOpen(true);
+  }, []);
+
+  /**
+   * Handle project deletion request (opens confirmation modal)
+   */
+  const handleDeleteProject = useCallback((projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      setProjectToDelete(project);
+      setIsDeleteProjectModalOpen(true);
+    }
+  }, [projects]);
+
+  /**
+   * Confirm and execute project deletion
+   */
+  const confirmProjectDelete = useCallback(async () => {
+    if (!projectToDelete || !user) return;
+
+    try {
+      // Delete from Firebase
+      await projectService.deleteProject(projectToDelete.id);
+      
+      // Update local state
+      setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
+      
+      // If deleting the currently selected project, clear selection
+      if (selectedProject?.id === projectToDelete.id) {
+        setSelectedProject(null);
+      }
+      
+      // Show success message
+      addMessage({ 
+        sender: 'ai', 
+        text: `Project "${projectToDelete.name}" deleted successfully.`, 
+        type: 'text' 
+      });
+      
+      console.log('Project deleted successfully:', projectToDelete.name);
+    } catch (error) {
+      console.error('Error deleting project:', error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      addMessage({ 
+        sender: 'ai', 
+        text: `Failed to delete project: ${errorMessage}`, 
+        type: 'error' 
+      });
+    } finally {
+      // Close modal and reset state
+      setIsDeleteProjectModalOpen(false);
+      setProjectToDelete(null);
+    }
+  }, [projectToDelete, user, selectedProject, setProjects, addMessage]);
+
+  /**
+   * Handle setting a project as default
+   */
+  const handleSetDefaultProject = useCallback(async (projectId: string) => {
+    if (!user) return;
+
+    try {
+      await projectService.setDefaultProject(user.uid, projectId);
+      setDefaultProjectId(projectId);
+      
+      const project = projects.find(p => p.id === projectId);
+      addMessage({ 
+        sender: 'ai', 
+        text: `"${project?.name || 'Project'}" set as default project.`, 
+        type: 'text' 
+      });
+      
+      console.log('Default project set successfully:', projectId);
+    } catch (error) {
+      console.error('Error setting default project:', error);
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      addMessage({ 
+        sender: 'ai', 
+        text: `Failed to set default project: ${errorMessage}`, 
+        type: 'error' 
+      });
+    }
+  }, [user, projects, addMessage]);
   //#endregion
-
-
+  //#endregion
 
 
 
@@ -743,6 +897,9 @@ const App: React.FC = () => {
       new ProcessAiActions(
           messages,
           setMessages,
+          canvasItems,
+          setCanvasItems,
+          saveHistorySnapshot,
           handleBeamFormSubmit,
           handleBeamFormCancel,
           handleElementFormSubmit,
@@ -752,8 +909,8 @@ const App: React.FC = () => {
 
   // Update dependencies in aiActionProcessor whenever they change
   useEffect(() => {
-    aiActionProcessor.updateDependencies(messages, setMessages);
-  }, [messages, setMessages, aiActionProcessor]);
+    aiActionProcessor.updateDependencies(messages, setMessages, canvasItems, setCanvasItems, saveHistorySnapshot);
+  }, [messages, setMessages, canvasItems, setCanvasItems, saveHistorySnapshot, aiActionProcessor]);
 
   /**
    * Processes AI-generated actions and executes corresponding handlers.
@@ -761,80 +918,9 @@ const App: React.FC = () => {
    */
   const processAiActions = useCallback(async (actions: Action[]) => {
       for (const action of actions) {
-          switch (action.type) {
-              case 'update_beam_form': {
-                  saveHistorySnapshot();
-                  
-                  if (action.targetContext === 'canvas') {
-                      // Update canvas items
-                      setCanvasItems(prevItems => {
-                          return prevItems.map(item => {
-                              if (item.type === 'beam_input' && (item as any).data?.Name === action.targetBeamName) {
-                                  return { ...item, data: { ...(item as any).data, ...action.updatedProperties } };
-                              }
-                              return item;
-                          });
-                      });
-                  } else {
-                      // Update chat messages
-                      setMessages(prevMessages => {
-                          return prevMessages.map(msg => {
-                              if (msg.type === 'beam_input_form' && msg.beamInputsData) {
-                                  const updatedBeamData = msg.beamInputsData.map(beam => {
-                                      if (beam.Name === action.targetBeamName) {
-                                          return { ...beam, ...action.updatedProperties };
-                                      }
-                                      return beam;
-                                  });
-                                  return { ...msg, beamInputsData: updatedBeamData };
-                              }
-                              return msg;
-                          });
-                      });
-                  }
-                  break;
-              }
-              case 'update_element_form': {
-                  saveHistorySnapshot();
-                  
-                  if (action.targetContext === 'canvas') {
-                      // Update canvas items
-                      setCanvasItems(prevItems => {
-                          return prevItems.map(item => {
-                              if (item.type === 'element' && (item as any).data?.name === action.targetElementName) {
-                                  return { ...item, data: { ...(item as any).data, ...action.updatedProperties } };
-                              }
-                              return item;
-                          });
-                      });
-                  } else {
-                      // Update chat messages
-                      setMessages(prevMessages => {
-                          return prevMessages.map(msg => {
-                              if (msg.type === 'element_form' && msg.elementData) {
-                                  const updatedElementData = msg.elementData.map(element => {
-                                      if (element.name === action.targetElementName) {
-                                          return { ...element, ...action.updatedProperties };
-                                      }
-                                      return element;
-                                  });
-                                  return { ...msg, elementData: updatedElementData };
-                              }
-                              return msg;
-                          });
-                      });
-                  }
-                  break;
-              }
-              case 'download_analysis': {
-                  // ... download logic
-                  break;
-              }
-              default:
-                  aiActionProcessor.processAction(action);
-          }
+          aiActionProcessor.processAction(action);
       }
-  }, [aiActionProcessor, saveHistorySnapshot]);
+  }, [aiActionProcessor]);
 
   // AI Decision Processing
   /**
@@ -1149,19 +1235,13 @@ const App: React.FC = () => {
       setCanvasItems(prev => [...prev, newItem as CanvasItem]);
       setSelectedCanvasItemId(newItem.id);
       setIsCanvasOpen(true);
-      // If the source message contained an active form, deactivate it so the form closes when pinned
-      if (msg.id && typeof formIndex === 'number') {
-        setMessages(prev => prev.map(m => {
-          if (m.id === msg.id && m.isFormActive) {
-            const newIsFormActive = [...m.isFormActive];
-            newIsFormActive[formIndex] = false;
-            return { ...m, isFormActive: newIsFormActive };
-          }
-          return m;
-        }));
+      
+      // For forms, remove them completely from chat (like cancelling)
+      if ((msg.type === 'beam_input_form' || msg.type === 'element_form') && typeof formIndex === 'number') {
+        removeFormFromMessage(msg.id, formIndex);
       }
     }
-  }, []);
+  }, [removeFormFromMessage]);
 
   const handleRemoveCanvasItem = useCallback((id: string) => {
     setCanvasItems(prev => {
@@ -1347,12 +1427,26 @@ const App: React.FC = () => {
         onSave={handleSaveSection}
         onDelete={handleDeleteSection}
       />
+
+      <ProjectForm
+        isOpen={isCreateProjectModalOpen}
+        onClose={() => setIsCreateProjectModalOpen(false)}
+        mode="create"
+        onCreate={handleCreateProject}
+      />
       
       <ConfirmDeleteModal
         isOpen={isDeleteModalOpen}
         elementName={elementToDelete?.name || ''}
         onConfirm={confirmElementDelete}
         onCancel={() => setIsDeleteModalOpen(false)}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={isDeleteProjectModalOpen}
+        elementName={projectToDelete?.name || ''}
+        onConfirm={confirmProjectDelete}
+        onCancel={() => setIsDeleteProjectModalOpen(false)}
       />
 
       <UserProfileModal
@@ -1381,7 +1475,7 @@ const App: React.FC = () => {
           selectedProject={selectedProject}
           onSelectProject={setSelectedProject}
           onBackToProjects={() => setSelectedProject(null)}
-          onAddProject={() => { /* TODO */ }}
+          onAddProject={handleAddProject}
           onEditProject={(updatedProject) => {
             // Update the projects array with the updated project
             setProjects(prev => prev.map(p => 
@@ -1392,7 +1486,9 @@ const App: React.FC = () => {
               setSelectedProject(updatedProject);
             }
           }}
-          onDeleteProject={() => { /* TODO */ }}
+          onDeleteProject={handleDeleteProject}
+          onSetDefault={handleSetDefaultProject}
+          defaultProjectId={defaultProjectId}
           onElementClick={handleElementClick}
           onElementDoubleClick={handleElementDoubleClick}
           onElementDelete={handleElementDelete}

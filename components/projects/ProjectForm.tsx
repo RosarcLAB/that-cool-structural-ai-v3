@@ -4,19 +4,52 @@ import { SaveIcon } from '../utility/icons';
 import { projectService } from '../../services/projectService';
 
 export interface ProjectFormProps {
-  project: Project;
+  project?: Project; // Optional for create mode
+  mode: 'create' | 'edit';
   isOpen: boolean;
   onClose: () => void;
-  onSave: (updatedProject: Project) => void;
+  onSave?: (updatedProject: Project) => void; // For edit mode
+  onCreate?: (projectData: Omit<Project, 'id'>) => void; // For create mode
 }
 
 export const ProjectForm: React.FC<ProjectFormProps> = ({
   project,
+  mode,
   isOpen,
   onClose,
   onSave,
+  onCreate,
 }) => {
-  const [formData, setFormData] = useState<Project>(project);
+  // Helper function to get initial form data based on mode
+  const getInitialFormData = (): Omit<Project, 'id'> => {
+    if (mode === 'create') {
+      // Default structure for new project (no ID)
+      return {
+        name: '',
+        description: '',
+        location: { city: '', country: '' },
+        buildingInfo: {
+          type: '',
+          stories: 1,
+          totalArea: 0,
+          structuralSystem: '',
+          foundationType: '',
+        },
+        elements: [],
+        elementCount: 0,
+        status: 'draft',
+        version: '1.0',
+        isActive: true,
+        ownerId: '', // Will be set by parent
+        projectMembers: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+    return project!;
+  };
+
+  const [formData, setFormData] = useState<Omit<Project, 'id'> | Project>(getInitialFormData());
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
@@ -27,11 +60,16 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   const [timelineCollapsed, setTimelineCollapsed] = useState(true);
   const [settingsCollapsed, setSettingsCollapsed] = useState(true);
 
-  // Update form data when project prop changes
+  // Update form data when project prop changes (edit mode only)
   useEffect(() => {
-    setFormData(project);
-    setIsDirty(false);
-  }, [project]);
+    if (mode === 'edit' && project) {
+      setFormData(project);
+      setIsDirty(false);
+    } else if (mode === 'create') {
+      setFormData(getInitialFormData());
+      setIsDirty(false);
+    }
+  }, [project, mode]);
 
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({
@@ -64,24 +102,36 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   };
 
   const handleSave = async () => {
+    // Basic validation
+    if (!formData.name.trim()) {
+      console.error('Project name is required');
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // Update the project in the database
-      await projectService.updateProject(project.id, {
-        ...formData,
-        updatedAt: new Date()
-      });
-      
-      // Call the parent callback with updated data
-      onSave({
-        ...formData,
-        updatedAt: new Date()
-      });
+      if (mode === 'create') {
+        // For create mode, pass data without ID to onCreate callback
+        onCreate?.(formData as Omit<Project, 'id'>);
+      } else if (mode === 'edit' && project) {
+        // For edit mode, update existing project
+        await projectService.updateProject(project.id, {
+          ...formData,
+          updatedAt: new Date()
+        });
+        
+        // Call the parent callback with updated project data
+        onSave?.({
+          ...formData as Project,
+          id: project.id, // Ensure ID is preserved
+          updatedAt: new Date()
+        });
+      }
       
       setIsDirty(false);
-      console.log('Project updated successfully');
+      console.log(`Project ${mode === 'create' ? 'created' : 'updated'} successfully`);
     } catch (error) {
-      console.error('Error updating project:', error);
+      console.error(`Error ${mode === 'create' ? 'creating' : 'updating'} project:`, error);
       // You might want to show an error toast/notification here
     } finally {
       setIsSaving(false);
@@ -89,7 +139,11 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   };
 
   const handleCancel = () => {
-    setFormData(project);
+    if (mode === 'edit' && project) {
+      setFormData(project);
+    } else if (mode === 'create') {
+      setFormData(getInitialFormData());
+    }
     setIsDirty(false);
     onClose();
   };
@@ -111,8 +165,12 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
           <div className="sticky top-0 z-10 bg-base-100 px-6 py-4 border-b border-base-300 rounded-t-xl">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-bold text-base-content">Edit Project</h2>
-                <p className="text-sm text-base-content/70 mt-1">Update project information and settings</p>
+                <h2 className="text-2xl font-bold text-base-content">
+                  {mode === 'edit' ? 'Edit Project' : 'Create New Project'}
+                </h2>
+                <p className="text-sm text-base-content/70 mt-1">
+                  {mode === 'edit' ? 'Update project information and settings' : 'Enter project information and settings'}
+                </p>
               </div>
               <button
                 onClick={handleCancel}
@@ -496,7 +554,10 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
                   disabled={!isDirty || isSaving}
                   className="px-6 py-3 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105 active:scale-95"
                 >
-                  {isSaving ? 'Saving...' : 'Save Changes'}
+                  {isSaving 
+                    ? (mode === 'create' ? 'Creating...' : 'Saving...') 
+                    : (mode === 'create' ? 'Create Project' : 'Save Changes')
+                  }
                 </button>
               </div>
             </div>

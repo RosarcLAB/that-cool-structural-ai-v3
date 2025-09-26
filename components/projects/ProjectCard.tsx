@@ -81,18 +81,18 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
             <button title={isDefault ? 'Default Project' : 'Set as Default'} onClick={handleSetDefault} className={`btn btn-ghost btn-xs btn-circle ${isDefault ? 'text-primary' : ''}`} aria-label="set-default">
               <BookmarkIcon className="w-4 h-4" />
             </button>
-            <button title="Edit Project" onClick={handleEdit} className="btn btn-ghost btn-xs btn-circle" aria-label="edit">
+            {/* <button title="Edit Project" onClick={handleEdit} className="btn btn-ghost btn-xs btn-circle" aria-label="edit">
               <EditIcon className="w-4 h-4" />
-            </button>
-            <button title="Save" onClick={handleSave} className="btn btn-ghost btn-xs btn-circle" aria-label="save">
+            </button> */}
+            {/* <button title="Save" onClick={handleSave} className="btn btn-ghost btn-xs btn-circle" aria-label="save">
               <SaveIcon className="w-4 h-4" />
-            </button>
+            </button> */}
             <button title="Delete" onClick={handleDelete} className="btn btn-ghost btn-xs btn-circle" aria-label="delete">
               <DeleteIcon className="w-4 h-4" />
             </button>
-            <button title="Share" onClick={handleShare} className="btn btn-ghost btn-xs btn-circle" aria-label="share">
+            {/* <button title="Share" onClick={handleShare} className="btn btn-ghost btn-xs btn-circle" aria-label="share">
               <ShareIcon className="w-4 h-4" />
-            </button>
+            </button> */}
           </div>
         </div>
       </div>

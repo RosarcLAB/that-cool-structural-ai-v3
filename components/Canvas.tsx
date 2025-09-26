@@ -5,6 +5,7 @@ import { CanvasItem, CanvasTextItem, CanvasBeamInputItem} from '../customTypes/t
 import type { StatusMessage, Element as StructuralElement } from '../customTypes/structuralElement';
 import { BeamInput } from '../customTypes/structuralElement';
 import { CloseIcon } from './utility/icons';
+import { TextEditor, type TextEditorHandle } from './utility/TextEditor';
 import StructuralElementForm from './structuralEngineering/StructuralElementForm';
 import { BeamInputForm } from '././structuralEngineering/BeamInputForm';
 import { BeamAnalysisDisplay } from '././structuralEngineering/BeamAnalysisDisplay';
@@ -39,26 +40,48 @@ const SelectedItemWrapper: React.FC<{ title: string; children: React.ReactNode; 
     </div>
 );
 
-// Specific component for editable text items
-const TextCanvasItem: React.FC<{ item: CanvasTextItem; onUpdate: (item: CanvasTextItem) => void }> = ({ item, onUpdate }) => {
-    const [content, setContent] = useState(item.content);
-
-    const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        setContent(e.target.value);
+// Adapter component to bridge TextCanvasItem interface with TextEditor
+const TextEditorAdapter: React.FC<{ item: CanvasTextItem; onUpdate: (item: CanvasTextItem) => void }> = ({ item, onUpdate }) => {
+    // Convert string content to TextEditor format
+    const textToSlateValue = (text: string) => {
+        if (!text) {
+            return [{ type: 'paragraph', children: [{ text: '' }] }];
+        }
+        
+        return text.split('\n').map(line => ({
+            type: 'paragraph',
+            children: [{ text: line }]
+        }));
     };
 
-    const handleBlur = () => {
-        onUpdate({ ...item, content });
+    // Convert TextEditor format back to string
+    const slateValueToText = (content: any[]) => {
+        return content.map(node => {
+            if (node.children) {
+                return node.children.map((child: any) => child.text || '').join('');
+            }
+            return '';
+        }).join('\n');
+    };
+
+    const [editorContent, setEditorContent] = useState(textToSlateValue(item.content));
+
+    const handleEditorChange = (newContent: any[]) => {
+        setEditorContent(newContent);
+        const textContent = slateValueToText(newContent);
+        onUpdate({ ...item, content: textContent });
     };
 
     return (
-        <textarea
-            value={content}
-            onChange={handleContentChange}
-            onBlur={handleBlur}
-            className="w-full h-48 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:outline-none"
-            aria-label="Text note editor"
-        />
+        <div className="w-full h-full flex flex-col" style={{ minHeight: '60vh', maxHeight: '80vh' }}>
+            <TextEditor
+                content={editorContent}
+                onChange={handleEditorChange}
+                placeholder="Enter your text here..."
+                title="Text Note"
+                className="flex-1 flex flex-col overflow-hidden"
+            />
+        </div>
     );
 };
 
@@ -229,7 +252,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                         case 'text':
                             return (
                                 <SelectedItemWrapper title={selectedItem.title}>
-                                    <TextCanvasItem item={selectedItem} onUpdate={onUpdateItem as (i: CanvasTextItem) => void} />
+                                    <TextEditorAdapter item={selectedItem} onUpdate={onUpdateItem as (i: CanvasTextItem) => void} />
                                 </SelectedItemWrapper>
                             );
                         case 'element':
@@ -254,32 +277,32 @@ export const Canvas: React.FC<CanvasProps> = ({
                                     />
                                 </SelectedItemWrapper>
                             );
-                                                case 'beam_input': {
-                                                         const isAnalyzing = analyzingId === selectedItem.id;
-                                                         const inputItem = selectedItem as CanvasBeamInputItem;
-                                                         return (
-                                                                <SelectedItemWrapper title={`Edit: ${inputItem.data.Name}`}>
-                                                                     {isAnalyzing && (
-                                                                             <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
-                                                                                     <Spinner />
-                                                                                     <span className="ml-2">Analyzing...</span>
-                                                                             </div>
-                                                                     )}
-                                                                     <BeamInputForm
-                                                                                initialData={inputItem.data}
-                                                                                onChange={(updatedData) => onUpdateItem({ ...inputItem, data: updatedData })}
-                                                                                onSubmit={(data) => handleFormSubmit(data, inputItem.id)}
-                                                                                submitButtonText="Analyze in Canvas"
-                                                                        />
-                                                                     {/* Render analysis results in same chip when available */}
-                                                                     {inputItem.outputData && (
-                                                                         <div className="mt-4">
-                                                                             <BeamAnalysisDisplay input={inputItem.data} output={inputItem.outputData} />
-                                                                         </div>
-                                                                     )}
-                                                                </SelectedItemWrapper>
-                                                         );
-                                                }
+                        case 'beam_input': {
+                            const isAnalyzing = analyzingId === selectedItem.id;
+                            const inputItem = selectedItem as CanvasBeamInputItem;
+                            return (
+                                <SelectedItemWrapper title={`Edit: ${inputItem.data.Name}`}>
+                                        {isAnalyzing && (
+                                                <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-10 rounded-lg">
+                                                        <Spinner />
+                                                        <span className="ml-2">Analyzing...</span>
+                                                </div>
+                                        )}
+                                        <BeamInputForm
+                                                initialData={inputItem.data}
+                                                onChange={(updatedData) => onUpdateItem({ ...inputItem, data: updatedData })}
+                                                onSubmit={(data) => handleFormSubmit(data, inputItem.id)}
+                                                submitButtonText="Analyze in Canvas"
+                                        />
+                                        {/* Render analysis results in same chip when available */}
+                                        {inputItem.outputData && (
+                                            <div className="mt-4">
+                                                <BeamAnalysisDisplay input={inputItem.data} output={inputItem.outputData} />
+                                            </div>
+                                        )}
+                                </SelectedItemWrapper>
+                                );
+                        }
                         case 'beam_output':
                             return (
                                 <SelectedItemWrapper title={`Results: ${selectedItem.inputData.Name}`}>

@@ -3,6 +3,8 @@ import {
   collection,
   addDoc,
   updateDoc,
+  deleteDoc,
+  setDoc,
   doc,
   query,
   where,
@@ -231,12 +233,89 @@ class ProjectService {
   }
 
   /**
+   * Delete project permanently
+   */
+  async deleteProject(projectId: string): Promise<void> {
+    try {
+      // First, delete all elements in the subcollection
+      const elementsRef = collection(db, 'projects', projectId, 'elements');
+      const elementsSnapshot = await getDocs(elementsRef);
+      
+      // Delete all elements
+      const deleteElementPromises = elementsSnapshot.docs.map(elementDoc => 
+        deleteDoc(elementDoc.ref)
+      );
+      await Promise.all(deleteElementPromises);
+      
+      // Then delete the main project document
+      const projectRef = doc(db, 'projects', projectId);
+      await deleteDoc(projectRef);
+      
+      console.log(`Project ${projectId} and all its elements deleted successfully`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while deleting the project.";
+      console.error('Error deleting project:', errorMessage);
+      throw new Error(`Failed to delete project: ${errorMessage}`);
+    }
+  }
+
+  /**
    * Share project with another user
    */
   async shareProject(projectId: string, userEmail: string): Promise<void> {
     // TODO: Implement project sharing logic
     // This would typically involve adding the user to the project's participants array
     console.log('Project sharing not yet implemented', projectId, userEmail);
+  }
+
+  /**
+   * Set default project for a user
+   */
+  async setDefaultProject(userId: string, projectId: string): Promise<void> {
+    try {
+      const userPrefsRef = doc(db, 'userPreferences', userId);
+      // Try to update first
+      try {
+        await updateDoc(userPrefsRef, {
+          defaultProjectId: projectId,
+          updatedAt: serverTimestamp(),
+        });
+        console.log(`Set default project ${projectId} for user ${userId}`);
+      } catch (updateError) {
+        // If update fails (document doesn't exist), create it
+        await setDoc(userPrefsRef, {
+          userId,
+          defaultProjectId: projectId,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        console.log(`Created user preferences and set default project ${projectId} for user ${userId}`);
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      console.error('Error setting default project:', errorMessage);
+      throw new Error(`Failed to set default project: ${errorMessage}`);
+    }
+  }
+
+  /**
+   * Get default project ID for a user
+   */
+  async getDefaultProject(userId: string): Promise<string | null> {
+    try {
+      const userPrefsRef = doc(db, 'userPreferences', userId);
+      const userPrefsSnap = await getDoc(userPrefsRef);
+      
+      if (userPrefsSnap.exists()) {
+        const data = userPrefsSnap.data();
+        return data.defaultProjectId || null;
+      }
+      return null;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      console.error('Error getting default project:', errorMessage);
+      return null;
+    }
   }
 
   /**

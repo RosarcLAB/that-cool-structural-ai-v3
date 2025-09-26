@@ -238,9 +238,9 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
   };
 
   return (
-    <div className={`bg-white rounded-lg ${className}`}>
-      {/* Header with action buttons */}
-      <div className="flex justify-between items-center border-b pb-3 mb-4">
+    <div className={`bg-white rounded-lg flex flex-col h-full ${className}`}>
+      {/* Header with action buttons - Fixed at top */}
+      <div className="flex justify-between items-center border-b pb-3 mb-0 px-4 pt-4 flex-shrink-0">
         <h4 className="text-lg font-semibold text-gray-800">{title}</h4>
         <div className="flex items-center gap-2">
           {!readOnly && (
@@ -272,51 +272,56 @@ export const TextEditor = forwardRef<TextEditorHandle, TextEditorProps>(({
         </div>
       </div>
 
-      <div ref={editorRef}>
-        <Slate editor={editor} initialValue={content} onChange={handleSlateChange}>
-          {/* Toolbar */}
-          {!readOnly && (
-            <div className="flex flex-wrap gap-1 p-2 border border-gray-200 rounded-t-lg bg-gray-50 mb-0">
-              <MarkButton format="bold" icon="B" label="Bold" />
-              <MarkButton format="italic" icon="I" label="Italic" />
-              <MarkButton format="underline" icon="U" label="Underline" />
-              <MarkButton format="code" icon="</>" label="Code" />
-              <MarkButton format="superscript" icon="x²" label="Superscript" />
-              <MarkButton format="subscript" icon="x₂" label="Subscript" />
-              <div className="w-px h-6 bg-gray-300 mx-1" />
-              <BlockButton format="heading-one" icon="H1" label="Heading 1" />
-              <BlockButton format="heading-two" icon="H2" label="Heading 2" />
-              <BlockButton format="block-quote" icon="❝" label="Quote" />
-              <div className="w-px h-6 bg-gray-300 mx-1" />
-              <BlockButton format="numbered-list" icon="1." label="Numbered List" />
-              <BlockButton format="bulleted-list" icon="•" label="Bulleted List" />
-              <div className="w-px h-6 bg-gray-300 mx-1" />
-              <BlockButton format="left" icon="⫷" label="Align Left" />
-              <BlockButton format="center" icon="≡" label="Align Center" />
-              <BlockButton format="right" icon="⫸" label="Align Right" />
+      {/* Editor area - Flexible and scrollable */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div ref={editorRef} className="flex-1 flex flex-col overflow-hidden">
+          <Slate editor={editor} initialValue={content} onChange={handleSlateChange}>
+            {/* Toolbar - Fixed at top of editor */}
+            {!readOnly && (
+              <div className="flex flex-wrap gap-1 p-2 border-b border-gray-200 bg-gray-50 flex-shrink-0">
+                <MarkButton format="bold" icon="B" label="Bold" />
+                <MarkButton format="italic" icon="I" label="Italic" />
+                <MarkButton format="underline" icon="U" label="Underline" />
+                <MarkButton format="code" icon="</>" label="Code" />
+                <MarkButton format="superscript" icon="x²" label="Superscript" />
+                <MarkButton format="subscript" icon="x₂" label="Subscript" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
+                <BlockButton format="heading-one" icon="H1" label="Heading 1" />
+                <BlockButton format="heading-two" icon="H2" label="Heading 2" />
+                <BlockButton format="block-quote" icon="❝" label="Quote" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
+                <BlockButton format="numbered-list" icon="1." label="Numbered List" />
+                <BlockButton format="bulleted-list" icon="•" label="Bulleted List" />
+                <div className="w-px h-6 bg-gray-300 mx-1" />
+                <BlockButton format="left" icon="⫷" label="Align Left" />
+                <BlockButton format="center" icon="≡" label="Align Center" />
+                <BlockButton format="right" icon="⫸" label="Align Right" />
+              </div>
+            )}
+            
+            {/* Editor - Scrollable content area */}
+            <div className="flex-1 overflow-y-auto border border-gray-200">
+              <Editable
+                className={`min-h-full p-4 focus:outline-none focus:ring-2 focus:ring-teal-200 ${readOnly ? 'border border-gray-200 rounded-lg' : ''}`}
+                renderElement={renderElement}
+                renderLeaf={renderLeaf}
+                placeholder={placeholder}
+                readOnly={readOnly}
+                onKeyDown={(event) => {
+                  if (readOnly) return;
+                  
+                  for (const hotkey in HOTKEYS) {
+                    if (isHotkey(hotkey, event)) {
+                      event.preventDefault();
+                      const mark = HOTKEYS[hotkey as keyof typeof HOTKEYS];
+                      toggleMark(editor, mark);
+                    }
+                  }
+                }}
+              />
             </div>
-          )}
-          
-          {/* Editor */}
-          <Editable
-            className={`min-h-[200px] p-4 border ${!readOnly ? 'border-t-0 rounded-b-lg' : 'rounded-lg'} focus:outline-none focus:ring-2 focus:ring-teal-200`}
-            renderElement={renderElement}
-            renderLeaf={renderLeaf}
-            placeholder={placeholder}
-            readOnly={readOnly}
-            onKeyDown={(event) => {
-              if (readOnly) return;
-              
-              for (const hotkey in HOTKEYS) {
-                if (isHotkey(hotkey, event)) {
-                  event.preventDefault();
-                  const mark = HOTKEYS[hotkey as keyof typeof HOTKEYS];
-                  toggleMark(editor, mark);
-                }
-              }
-            }}
-          />
-        </Slate>
+          </Slate>
+        </div>
       </div>
     </div>
   );

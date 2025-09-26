@@ -2,12 +2,17 @@
 import type { BeamInput, BeamOutput, Element, Support, Load, AppliedLoads, LoadCombination, LoadCaseFactor, StatusMessage } from './structuralElement';
 import type { Timestamp, FieldValue } from 'firebase/firestore';
 
+
+//#region Chat  
+
 // Defines the sender of a chat message.
 export type ChatMessageSender = 'user' | 'ai';
+
 // Defines the type of content within a chat message.
 export type ChatMessageType = 'text' | 'beam_input_form' | 'beam_output_display' | 'element_form' | 'error';
 
-// Represents a single message in the chat history.
+/** 
+ * Represents a single message in the chat history type. */
 export interface ChatMessage {
   id: string;
   /** The sender of the message, either the 'user' or the 'ai'. */
@@ -29,20 +34,45 @@ export interface ChatMessage {
    statusMessage?: StatusMessage | null;
 }
 
-// Represents a file payload to be sent to the Gemini API.
+/** Represents a file payload type to be sent to the API. */
 export interface FilePayload {
   mimeType: string;
   data: string; // Base64 encoded string
 }
 
-// A discriminated union for actions the AI can request.
+/** Represents the structured decision type for the Gemini API. */
+export interface GeminiDecisionResponse {
+    chat_response: string;
+    beamInputs?: BeamInput[];
+    ElementForms?: Element[];     // Structural element forms for design/analysis
+    actions?: Action[];
+}
+
+
+//#endregion
+
+
+
+
+
+//#region --- AI Action   ---
+/** 
+ * These are actions received from the AI to trigger Form events in the chat or canvas 
+ *  'submit' - submits the form at targetIndex
+ *  'cancel' - cancels the form at targetIndex
+ *  'open_BeamInputForm' - opens a new Beam Input Form at targetIndex
+ *  'open_ElementForm' - opens a new Element Form at targetIndex
+ * */
 export type FormAction = {
     type: 'submit' | 'cancel'| 'open_BeamInputForm' | 'open_ElementForm';
     targetIndex: number; // 0-based index of the form in the last AI message
 };
 
+
 export type GlobalAction = {
     type: 'submit_all'| 'cancel_all';
+    targetContext?: 'chat' | 'canvas';
+
 };
 
 export type UpdateAction = {
@@ -59,6 +89,7 @@ export type UpdateAction = {
 
 export type DownloadAction = {
     type: 'download_analysis';
+    targetContext?: 'chat' | 'canvas';
     targetBeamNames: string[] | 'all';
     format: 'pdf' | 'csv';
 };
@@ -105,6 +136,12 @@ export type FormManipulationAction = {
         targetIndex: number; // Index of the form within the message
         itemIndex?: number; // Index of the item to remove or edit (for remove/edit actions)
         parentIndex?: number; // Index of parent item (for nested actions like load case factors)
+        /** Context where the target form is located */
+        targetContext?: 'chat' | 'canvas';
+        /** Name of the target element (for elements) */
+        targetElementName?: string;
+        /** Name of the target beam (for beams) */
+        targetBeamName?: string;
     /** Unified data payload that can handle different action types */
     data?: ActionData;
 };
@@ -124,15 +161,8 @@ export type LoadTransferAction = {
 };
 
 export type Action = FormAction | GlobalAction | UpdateAction | DownloadAction | ConfirmAttachmentAnalysisAction | CancelAttachmentAnalysisAction | FormManipulationAction | LoadTransferAction;
+//#endregion
 
-
-// Represents the structured decision from the Gemini API.
-export interface GeminiDecisionResponse {
-    chat_response: string;
-    beamInputs?: BeamInput[];
-    ElementForms?: Element[];     // Structural element forms for design/analysis
-    actions?: Action[];
-}
 
 
 // --- Canvas Types ---

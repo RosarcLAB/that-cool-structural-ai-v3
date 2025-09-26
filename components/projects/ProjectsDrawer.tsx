@@ -20,6 +20,8 @@ interface ProjectsDrawerProps {
   onAddProject: () => void; // Callback to add a new project
   onEditProject: (project: Project) => void; // Callback to edit a project
   onDeleteProject: (id: string) => void; // Callback to delete a project by ID
+  onSetDefault: (projectId: string) => void; // Callback to set a project as default
+  defaultProjectId?: string | null; // ID of the default project
   onElementClick: (element: StructuralElement) => void; // Callback when an element is clicked
   onElementDoubleClick: (element: StructuralElement) => void; // Callback for double-clicking an element
   onElementDelete: (elementId: string) => void; // Callback to delete an element by ID
@@ -37,6 +39,8 @@ export const ProjectsDrawer: React.FC<ProjectsDrawerProps> = ({
   onAddProject,
   onEditProject,
   onDeleteProject,
+  onSetDefault,
+  defaultProjectId,
   onElementClick,
   onElementDoubleClick,
   onElementDelete,
@@ -119,10 +123,10 @@ export const ProjectsDrawer: React.FC<ProjectsDrawerProps> = ({
                   onNavigateToElements={() => onSelectProject(project)}
                   onEdit={() => onEditProject(project)}
                   onDelete={() => onDeleteProject(project.id)}
-                  onSetDefault={() => {/* TODO */}}
+                  onSetDefault={() => onSetDefault(project.id)}
                   onSave={() => {/* TODO */}}
                   onShare={() => {/* TODO */}}
-                  isDefault={false}
+                  isDefault={defaultProjectId === project.id}
                 />
               ))
             ) : (
