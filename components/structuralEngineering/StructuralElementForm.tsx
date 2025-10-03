@@ -56,22 +56,12 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     // Track if this is the initial render to avoid calling onChange on mount
     const isInitialRender = useRef(true);
     const previousElementRef = useRef<Element>(elementData);
+    const lastOnChangeElementRef = useRef<string>('');
     
     // Helper function to update element state and notify parent if controlled
     const updateElement = (updater: (prev: Element) => Element) => {
         setElement(prev => {
             const newElement = updater(prev);
-            
-            // Only call onChange if this is not the initial render and if controlled
-            // This prevents the infinite loop by not calling onChange during initialization
-            if (!isInitialRender.current && isControlled && onChange) {
-                // Use setTimeout to defer the onChange call to the next tick
-                // This ensures it happens after the current render cycle completes
-                setTimeout(() => {
-                    onChange(newElement);
-                }, 0);
-            }
-            
             return newElement;
         });
     };
@@ -81,17 +71,29 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         isInitialRender.current = false;
     }, []);
     
+    // Handle onChange callback separately to avoid infinite loops
+    useEffect(() => {
+        if (!isInitialRender.current && isControlled && onChange) {
+            const elementString = JSON.stringify(element);
+            // Only call onChange if the element actually changed since last onChange call
+            if (elementString !== lastOnChangeElementRef.current) {
+                lastOnChangeElementRef.current = elementString;
+                onChange(element);
+            }
+        }
+    }, [element, isControlled, onChange]);
+    
     // Sync with external elementData changes (without triggering onChange)
     useEffect(() => {
-        // Only update if the elementData prop actually changed from outside
-        if (elementData !== previousElementRef.current && elementData !== element) {
-            previousElementRef.current = elementData;
+        // Deep compare the incoming prop with the current state to avoid loops.
+        // Only update if the elementData from the parent is truly different.
+        if (JSON.stringify(elementData) !== JSON.stringify(element)) {
             setElement(elementData);
         }
-    }, [elementData, element]);
+    }, [elementData]);
     
     // State for the custom combobox
-    const [sectionSearchText, setSectionSearchText] = useState(element.sectionName || '');
+    const [sectionSearchText, setSectionSearchText] = useState(element?.sectionName || '');
     const [filteredSections, setFilteredSections] = useState<SectionProperties[]>([]);
     const [isDropdownVisible, setIsDropdownVisible] = useState(false);
     const comboboxRef = useRef<HTMLDivElement>(null);
@@ -102,7 +104,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const [reactionSourceSupportIndex, setReactionSourceSupportIndex] = useState<number | ''>('');
     
     // Helper to filter out reaction combinations from UI display  
-    const visibleLoadCombinations = element.loadCombinations?.filter(
+    const visibleLoadCombinations = element?.loadCombinations?.filter(
         combination => combination.combinationType !== 'Reaction'
     ) || [];
     
@@ -126,13 +128,16 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
 
 
+
+
+
     //#region Effect Hooks
     
     // Fetch project elements for transfer candidates
     useEffect(() => {
         let mounted = true;
         // If parent didn't pass an elementDataList, try fetching project elements for this element's project
-        if ((!elementDataList || elementDataList.length === 0) && element.projectId) {
+        if ((!elementDataList || elementDataList.length === 0) && element?.projectId) {
             projectService.getProjectElements(element.projectId).then(els => {
                 if (!mounted) return;
                 setFetchedCandidateElements(els || []);
@@ -141,32 +146,46 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             });
         }
         return () => { mounted = false; };
-    }, [element.projectId, elementDataList]);
+    }, [element?.projectId, elementDataList]);
 
-    const candidateElements: any[] = (elementDataList && elementDataList.length > 0 ? elementDataList : fetchedCandidateElements).filter(el => el.id && el.projectId && el.projectId === element.projectId && el.id !== element.id);
+    const candidateElements: any[] = (elementDataList && elementDataList.length > 0 ? elementDataList : fetchedCandidateElements).filter(el => el.id && el.projectId && el.projectId === element?.projectId && el.id !== element?.id);
     const selectedSourceElement: any | undefined = candidateElements.find((p: any) => p.id === reactionSourceElementId);
     const selectedSourceSupports: any[] = selectedSourceElement?.supports || [];
 
     // Subscribe to any transfer groups referenced by this element so updates propagate
     useEffect(() => {
+        if (!element?.appliedLoads) return;
+        
         const unsubscribers: Array<() => void> = [];
-        element.appliedLoads.forEach(load => {
-            const tg = (load as any).transfer;
-            if (tg && tg.transferGroupId && tg.projectId) {
-                const unsub = projectTransferRegistry.subscribe(tg.projectId, tg.transferGroupId, (canonical) => {
-                    setElement(prev => {
-                        const idx = prev.appliedLoads.findIndex(l => (l as any).transfer?.transferGroupId === canonical.transfer!.transferGroupId);
-                        if (idx === -1) return prev;
-                        const copy = [...prev.appliedLoads];
-                        copy[idx] = { ...(canonical as any) };
-                        return { ...prev, appliedLoads: copy };
-                    });
+        
+        // Create a stable reference to the transfer group IDs to avoid re-subscribing unnecessarily
+        const transferGroups = element.appliedLoads
+            .map(load => (load as any).transfer)
+            .filter(tg => tg && tg.transferGroupId && tg.projectId)
+            .map(tg => ({ projectId: tg.projectId, transferGroupId: tg.transferGroupId }));
+        
+        transferGroups.forEach(({ projectId, transferGroupId }) => {
+            const unsub = projectTransferRegistry.subscribe(projectId, transferGroupId, (canonical) => {
+                updateElement(prev => {
+                    const idx = prev.appliedLoads.findIndex(l => (l as any).transfer?.transferGroupId === canonical.transfer!.transferGroupId);
+                    if (idx === -1) return prev;
+                    
+                    // Only update if the data actually changed to prevent infinite loops
+                    const currentLoad = prev.appliedLoads[idx];
+                    if (JSON.stringify(currentLoad) === JSON.stringify(canonical)) {
+                        return prev;
+                    }
+                    
+                    const copy = [...prev.appliedLoads];
+                    copy[idx] = { ...(canonical as any) };
+                    return { ...prev, appliedLoads: copy };
                 });
-                unsubscribers.push(unsub);
-            }
+            });
+            unsubscribers.push(unsub);
         });
+        
         return () => unsubscribers.forEach(u => u());
-    }, [element.id, element.appliedLoads]);
+    }, [element?.id, element?.appliedLoads, updateElement]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -189,21 +208,22 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
    // Effect to enforce engineering rules (e.g., a single support must be fixed).
     useEffect(() => {
        // If there's only one support, it must be a 'Fixed' support (cantilever).
-       if (element.supports.length === 1 && element.supports[0].fixity !== SupportFixityType.Fixed) {
+       if (element?.supports?.length === 1 && element.supports[0].fixity !== SupportFixityType.Fixed) {
            const newSupports = [...element.supports];
            newSupports[0] = { ...newSupports[0], fixity: SupportFixityType.Fixed };
            setElement(prev => ({ ...prev, supports: newSupports }));
        }
-    }, [element.supports]);
+    }, [element?.supports]);
 
 
     // Recompute all load combinations whenever applied loads or combinations change
     useEffect(() => {
+        if (!element) return;
         const newElement = recomputeAllLoadCombinations(element);
         if (JSON.stringify(newElement) !== JSON.stringify(element)) {
             setElement(newElement);
         }
-    }, [element.appliedLoads, element.loadCombinations]);
+    }, [element?.appliedLoads, element?.loadCombinations, element]);
     
     // Update local element state when parent passes new elementData (e.g., with design results)
     // Only sync specific properties to avoid overriding user changes
@@ -315,14 +335,14 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
     // Sync text editor content when element's document content changes
     useEffect(() => {
-        if (element.documentContent && JSON.stringify(element.documentContent) !== JSON.stringify(textEditorContent)) {
+        if (element?.documentContent && JSON.stringify(element.documentContent) !== JSON.stringify(textEditorContent)) {
             setTextEditorContent(element.documentContent);
         }
-    }, [element.documentContent]);
+    }, [element?.documentContent]);
 
     // Auto-resolve section properties when sectionName exists but sections array is empty
     useEffect(() => {
-        if (element.sectionName && (!element.sections || element.sections.length === 0)) {
+        if (element?.sectionName && (!element?.sections || element.sections.length === 0)) {
             const matchingSection = sections.find(s => 
                 s.name.toLowerCase() === element.sectionName.toLowerCase()
             );
@@ -334,10 +354,12 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 }));
             }
         }
-    }, [element.sectionName, sections]);
+    }, [element?.sectionName, sections]);
 
     // Auto-generate descriptions for loads that don't have them
     useEffect(() => {
+        if (!element?.appliedLoads) return;
+        
         const loadsNeedingDescriptions = element.appliedLoads.some(load => 
             !load.description || load.description.trim() === ''
         );
@@ -372,8 +394,10 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 }))
             }));
         }
-    }, [element.appliedLoads, element.type]);
+    }, [element?.appliedLoads, element?.type]);
     //#endregion
+
+
 
 
 
@@ -547,6 +571,8 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
 
 
+
+
     //#region Support Handlers
 
     /**
@@ -564,6 +590,35 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     
     const removeSupport = (index: number) => updateElement(prev => ({...prev, supports: prev.supports.filter((_, i) => i !== index)}));
    
+    //#endregion
+
+
+
+
+
+
+
+
+    //#region Project Handlers
+    /**
+     * Handles changing the element's project assignment.
+     * Clears any data that might be project-specific to prevent errors.
+     */
+    const handleProjectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const selectedProjectId = e.target.value;
+        
+        // Clear project-specific state immediately to prevent conflicts
+        setReactionSourceElementId('');
+        setFetchedCandidateElements([]);
+        
+        // Use updateElement which will notify parent via onChange about project changes
+        updateElement(prev => ({
+            ...prev,
+            projectId: selectedProjectId,
+            // Clear potential project-specific data that might cause conflicts
+            loadTransfers: [], // Clear load transfers as they depend on elements in the project
+        }));
+    };
     //#endregion
 
 
@@ -931,23 +986,24 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     };
 
     // Helper: Validation for support/load positions
-    const isSupportPositionInvalid = (pos: number) => pos > element.span;
-    const isLoadPositionInvalid = (pos: string) => Number(pos) > element.span;
+    const isSupportPositionInvalid = (pos: number) => element?.span ? pos > element.span : false;
+    const isLoadPositionInvalid = (pos: string) => element?.span ? Number(pos) > element.span : false;
     const hasDuplicateSupportPositions = () => {
+        if (!element?.supports) return false;
         const positions = element.supports.map(s => s.position);
         return new Set(positions).size !== positions.length;
     };
-    const anySupportInvalid = element.supports.some(s => isSupportPositionInvalid(s.position)) || hasDuplicateSupportPositions();
-    const anyLoadInvalid = element.appliedLoads.some(l => l.position.some(isLoadPositionInvalid));
+    const anySupportInvalid = element?.supports ? (element.supports.some(s => isSupportPositionInvalid(s.position)) || hasDuplicateSupportPositions()) : false;
+    const anyLoadInvalid = element?.appliedLoads ? element.appliedLoads.some(l => l.position.some(isLoadPositionInvalid)) : false;
     const formHasError = anySupportInvalid || anyLoadInvalid;
 
     // Helper function to check if any design results have failed
     const hasFailedDesignResults = (): boolean => {
-        return element.designResults?.some(result => result.capacity_data.status === 'FAIL') || false;
+        return element?.designResults?.some(result => result.capacity_data.status === 'FAIL') || false;
     };
 
     // Find the governing design result to display in the main summary
-    const governingResult = element.designResults && element.designResults.length > 0
+    const governingResult = element?.designResults && element.designResults.length > 0
         ? element.designResults.reduce((max, current) => {
             const maxUtil = Math.max(
                 max.capacity_data.utilization.bending_strength,
@@ -985,6 +1041,15 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         });
     }
 
+
+    // Early return if element is null during project transfer
+    if (!element) {
+        return (
+            <div className="p-3 text-sm italic text-gray-500 text-center border rounded-lg bg-gray-50">
+                <p>Loading element...</p>
+            </div>
+        );
+    }
 
     if (!isFormActive) {
          return (
@@ -1075,13 +1140,17 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     </div>
                     <div>
                         <label className={labelClasses}>Project</label>
-                        <select name="projectId" value={element.projectId || ''} onChange={(e) => {
-                            const selectedId = e.target.value;
-                            const matched = projectData?.find(proj => proj.id === selectedId);
-                            setElement(prev => ({ ...prev, projectId: matched?.id || '' }));
-                        }} className={inputClasses}>
+                        <select name="projectId" value={element.projectId || ''} onChange={handleProjectChange} className={inputClasses}>
                             <option value="" disabled>Select Project</option>
-                            {projectData?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            {projectData && projectData.length > 0 ? (
+                                projectData.map(p => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name} {p.id === element.projectId ? '(Current)' : ''}
+                                    </option>
+                                ))
+                            ) : (
+                                <option value="" disabled>No projects available</option>
+                            )}
                         </select>
                     </div>
                     <div><label className={labelClasses}>Spacing/Tributary (m)</label><input name="spacing" type="number" step="any" value={element.spacing} onChange={handleChange} className={inputClasses} /></div>

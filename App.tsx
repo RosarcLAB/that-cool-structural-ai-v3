@@ -33,7 +33,7 @@ type AppContext = 'chat' | 'canvas' | 'attachm.';
 type FormMode = 'create' | 'edit' | 'duplicate';
 
 const App: React.FC = () => {
-  //#region constants and states
+  //#region -- constants and states---
   // State for managing the list of chat messages.
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // State for storing snapshots of the message history for the undo functionality.
@@ -106,7 +106,7 @@ const App: React.FC = () => {
 
 
 
-  //#region Call backs
+  //#region --- Call backs---
   /** 
    *  Fetches or refreshes the list of sections from the database. 
    * */
@@ -142,7 +142,7 @@ const App: React.FC = () => {
 
 
 
-  //#region useEffects
+  //#region --- useEffects---
   // Initial fetch of sections when the app loads.
   useEffect(() => {
     refreshSections();
@@ -211,7 +211,7 @@ const App: React.FC = () => {
 
 
 
-  //#region Message Management
+  //#region --- Message Management---
   /** Saves a snapshot of the current messages state to the history for undo purposes. */
   const saveHistorySnapshot = () => {
     setHistory(prev => {
@@ -339,7 +339,7 @@ const App: React.FC = () => {
 
 
 
-  //#region Form Handlers
+
 
 
 
@@ -415,19 +415,64 @@ const App: React.FC = () => {
 
 
 
+
+
   //#region --- Element ---
   const handleElementFormChange = useCallback((messageId: string, formIndex: number, updatedData: StructuralElement) => {
-      setMessages(prev =>
-        prev.map(msg => {
-            if (msg.id === messageId && msg.elementData) {
-                const newElementData = [...msg.elementData];
-                newElementData[formIndex] = updatedData;
-                return { ...msg, elementData: newElementData };
-            }
-            return msg;
-        })
-      );
-  }, []);
+    // Get the previous element data to compare for project changes
+    const previousElement = messages.find(msg => msg.id === messageId)?.elementData?.[formIndex];
+    
+    // Check if project changed
+    const projectChanged = previousElement && 
+      previousElement.projectId !== updatedData.projectId && 
+      previousElement.projectId && 
+      updatedData.projectId;
+
+    // Update the message with new element data
+    setMessages(prev =>
+      prev.map(msg => {
+        if (msg.id === messageId && msg.elementData) {
+          const newElementData = [...msg.elementData];
+          newElementData[formIndex] = updatedData;
+          return { ...msg, elementData: newElementData };
+        }
+        return msg;
+      })
+    );
+
+    // Handle project change - update projects state immediately for UI consistency
+    if (projectChanged && previousElement) {
+      setProjects(prev => prev.map(project => {
+        // Remove element from old project
+        if (project.id === previousElement.projectId) {
+          return {
+            ...project,
+            elements: (project.elements || []).filter(el => el.id !== previousElement.id)
+          };
+        }
+        // Add element to new project (if it exists in state)
+        if (project.id === updatedData.projectId) {
+          const existingElements = project.elements || [];
+          const elementExists = existingElements.some(el => el.id === updatedData.id);
+          
+          if (!elementExists && updatedData.id) {
+            return {
+              ...project,
+              elements: [...existingElements, updatedData]
+            };
+          }
+        }
+        return project;
+      }));
+
+      // Add a status message to inform the user about the project change
+      addMessage({
+        sender: 'ai',
+        text: `Element "${updatedData.name}" has been moved to a different project. Please save the element to persist this change to the database.`,
+        type: 'text'
+      });
+    }
+  }, [messages, setProjects, addMessage]);
   
   /**
    * Handles the submission of the structural element form.
@@ -599,32 +644,74 @@ const App: React.FC = () => {
         const projectId = elementToSave.projectId;
         if (!projectId) throw new Error('Please select a Project before saving.');
 
-        // 4) call service upsert
+        // Check if this is a project transfer (element exists with different projectId)
+        let originalProjectId: string | null = null;
+        if (elementToSave.id) {
+          // Find the element's original project
+          for (const project of projects) {
+            const existingElement = project.elements?.find(el => el.id === elementToSave.id);
+            if (existingElement && project.id !== projectId) {
+              originalProjectId = project.id;
+              break;
+            }
+          }
+        }
+
+        // 4) Handle project transfer if needed
+        if (originalProjectId && originalProjectId !== projectId) {
+          // Remove from old project first
+          await projectService.archiveElement(originalProjectId, elementToSave.id);
+          // Clear the ID so it gets created as new in the target project
+          elementToSave.id = undefined;
+        }
+
+        // 5) call service upsert
         const savedId = await projectService.upsertElement(projectId, elementToSave);
         // commit any transfer loads to the registry
         elementToSave.appliedLoads
           .filter(load => (load as any).transfer)
           .forEach(load => projectTransferRegistry.commitTransferLoad(load as any));
 
-        // 5) Update local projects state: replace or append element with server id
+        // 6) Update local projects state: handle both regular save and project transfer
         setProjects(prev => prev.map(p => {
-          if (p.id !== projectId) return p;
-          const existingIndex = (p.elements || []).findIndex(el => el.id === savedId || el.name === elementToSave.name);
-          const savedElement = { ...elementToSave, id: savedId, isSaved: true, updatedAt: new Date() } as StructuralElement;
-          if (existingIndex > -1) {
-            const newEls = [...(p.elements || [])];
-            newEls[existingIndex] = savedElement;
-            return { ...p, elements: newEls };
+          // Remove from original project if it was a transfer
+          if (originalProjectId && p.id === originalProjectId) {
+            return {
+              ...p,
+              elements: (p.elements || []).filter(el => el.id !== data.id) // Use original data.id
+            };
           }
-          return { ...p, elements: [...(p.elements || []), savedElement] };
+          
+          // Add/update in target project
+          if (p.id !== projectId) return p;
+          
+          const savedElement = { ...elementToSave, id: savedId, isSaved: true, updatedAt: new Date() } as StructuralElement;
+          const existingElements = p.elements || [];
+          
+          // For updates (element has saved ID)
+          if (data.id && !originalProjectId) {
+            const existingIndex = existingElements.findIndex(el => el.id === savedId);
+            if (existingIndex > -1) {
+              const newEls = [...existingElements];
+              newEls[existingIndex] = savedElement;
+              return { ...p, elements: newEls };
+            }
+          }
+          
+          // For new elements or transfers, add to the list
+          return { ...p, elements: [...existingElements, savedElement] };
         }));
 
-        // 6) Update messages with success and set isSaved
+        // 7) Update messages with success and set isSaved
+        const successMessage = originalProjectId 
+          ? `"${elementToSave.name}" transferred to new project and saved successfully.`
+          : `Saved "${elementToSave.name}".`;
+          
         setMessages(prev => prev.map(msg => {
           if (!msg.elementData) return msg;
           const newElementData = msg.elementData.map(el => el.name === elementToSave.name ? { ...el, id: savedId, isSaved: true, updatedAt: new Date() } : el);
           if (messageId && msg.id === messageId) {
-            return { ...msg, elementData: newElementData, statusMessage: { type: 'success', message: `Saved "${elementToSave.name}".`, timestamp: new Date().toLocaleTimeString() } };
+            return { ...msg, elementData: newElementData, statusMessage: { type: 'success', message: successMessage, timestamp: new Date().toLocaleTimeString() } };
           }
           return { ...msg, elementData: newElementData };
         }));
@@ -706,6 +793,8 @@ const App: React.FC = () => {
 
   //#endregion
   
+
+
 
 
 
@@ -887,7 +976,10 @@ const App: React.FC = () => {
 
 
 
-  //#region AI Processes
+
+
+
+  //#region --- AI Processes---
   // AI Action Processing
   /**
    * Processes AI-generated actions and executes corresponding handlers.
@@ -967,6 +1059,8 @@ const App: React.FC = () => {
     }
   };
   //#endregion
+
+
 
 
 
@@ -1221,6 +1315,7 @@ const App: React.FC = () => {
 
 
 
+
   //#region --- Canvas ---
   const handleAddToCanvas = useCallback((msg: ChatMessage, formIndex?: number) => {
     let newItem: CanvasItem | null = null;
@@ -1407,6 +1502,8 @@ const App: React.FC = () => {
   //#enregion
   
   //#endregion Handlers
+
+
 
 
 
