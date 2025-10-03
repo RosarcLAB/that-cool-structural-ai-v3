@@ -393,10 +393,11 @@ function mapReactionsToSupports(
   Object.entries(designOutput.reactions).forEach(([positionStr, forces]) => {
     const position = parseFloat(positionStr);
     
-    // Find matching support by position
-    const supportIndex = updatedElement.supports.findIndex(
-      support => Math.abs(support.position - position) < 0.001
-    );
+    // Find matching support by position (extract x from Coordinate if needed)
+    const supportIndex = updatedElement.supports.findIndex(support => {
+      const supportPos = typeof support.position === 'number' ? support.position : support.position.x;
+      return Math.abs(supportPos - position) < 0.001;
+    });
     
     if (supportIndex !== -1) {
       //const [fx, fy, mz] = forces;

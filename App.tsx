@@ -26,6 +26,7 @@ import { ConfirmDeleteModal } from './components/utility/ConfirmDeleteModal';
 import { UserProfileModal } from './components/auth/UserProfile';
 import { ConfirmationModal } from './components/utility/ConfirmationModal';
 import { projectTransferRegistry } from './services/projectTransferRegistry';
+import ProjectModel from './components/3DModels/ProjectModel';
 
 
 const MAX_HISTORY_STATES = 30;
@@ -52,6 +53,7 @@ const App: React.FC = () => {
   const [canvasItems, setCanvasItems] = useState<CanvasItem[]>([]);
   // State to control the visibility of the canvas panel.
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [isProjectModelOpen, setIsProjectModelOpen] = useState(false); // New state
   // State to track the currently selected item in the canvas.
   const [selectedCanvasItemId, setSelectedCanvasItemId] = useState<string | null>(null);
   // State to determine the context of user commands (chat or canvas).
@@ -135,6 +137,16 @@ const App: React.FC = () => {
         // addMessage({ sender: 'ai', text: `Error fetching projects: ${errorMessage}`, type: 'error' });
     }
   }, [user]);
+
+  /**
+ * Handles selecting a project to view in the 3D model viewer.
+ * Closes the canvas and opens the project model viewer.
+ */
+  const handleViewProjectIn3D = useCallback((project: Project) => {
+    setSelectedProject(project);
+    setIsProjectModelOpen(true);
+    setIsCanvasOpen(false); // Ensure canvas is closed
+  }, []);
   //#endregion
 
 
@@ -1564,14 +1576,18 @@ const App: React.FC = () => {
       />
 
       <div className={`flex h-screen bg-base-200 font-sans overflow-hidden transition-all duration-300`}>
+        {/* Projects Drawer */}
         <ProjectsDrawer
           isOpen={isProjectsDrawerOpen}
           onClose={() => setIsProjectsDrawerOpen(false)}
           projects={projects}
           elements={selectedProject ? selectedProject.elements || [] : []}
           selectedProject={selectedProject}
-          onSelectProject={setSelectedProject}
-          onBackToProjects={() => setSelectedProject(null)}
+          onSelectProject={handleViewProjectIn3D}
+          onBackToProjects={() => {
+            setSelectedProject(null);
+            setIsProjectModelOpen(false); // Close the 3D view when going back
+          }}
           onAddProject={handleAddProject}
           onEditProject={(updatedProject) => {
             // Update the projects array with the updated project
@@ -1591,6 +1607,8 @@ const App: React.FC = () => {
           onElementDelete={handleElementDelete}
           onElementDuplicate={handleElementDuplicate}
         />
+
+
         <div className={`flex-grow flex flex-col h-full relative transition-all duration-300 ${isProjectsDrawerOpen ? 'ml-80' : 'ml-0'}`}>
             {!isFirebaseConfigured && (
                 <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 text-sm" role="alert">
@@ -1599,7 +1617,7 @@ const App: React.FC = () => {
                 </div>
             )}
           
-          {/* App Bar  */}
+          {/* App Bar  Header*/}
           <header className="flex-shrink-0 bg-primary text-white shadow-md z-10">
             <div className="w-full px-4 py-2 flex items-center justify-between">
               
@@ -1629,6 +1647,7 @@ const App: React.FC = () => {
             </div>
           </header>
           
+          {/* Main Chat Interface */}
           <MainChatInterface
             messages={messages} isLoading={isLoading} userInput={userInput} setUserInput={setUserInput}
             fileToUpload={fileToUpload} setFileToUpload={setFileToUpload} context={context} setContext={setContext}
@@ -1669,6 +1688,32 @@ const App: React.FC = () => {
           />
                 </div>
             </>
+        )}
+
+        {/* ProjectModel Panel (3D Viewer) - conditionally rendered */}
+        {isProjectModelOpen && selectedProject && (
+          <ProjectModel
+            isOpen={isProjectModelOpen}
+            project={selectedProject}
+            onClose={() => setIsProjectModelOpen(false)}
+            width={canvasWidth}
+            onMouseDownOnResizer={handleMouseDownOnResizer}
+            onUpdateProject={(updatedProject) => {
+              // Update the project in the projects array
+              setProjects(prevProjects =>
+                prevProjects.map(p =>
+                  p.id === updatedProject.id ? updatedProject : p
+                )
+              );
+              // Update selectedProject
+              setSelectedProject(updatedProject);
+              // Optionally save to Firebase if configured
+              if (isFirebaseConfigured && user && updatedProject.id) {
+                projectService.updateProject(updatedProject.id, updatedProject)
+                  .catch(error => console.error('Error saving project:', error));
+              }
+            }}
+          />
         )}
       </div>
     </>

@@ -68,10 +68,19 @@ export enum DesignMethodType {
   NONE = 'None'
 }
 
-// Defines the structure for a support point on a beam.
+// 3D coordinate type for spatial positioning
+export interface Coordinate {
+  x: number;  // Required - position along element span or X-axis
+  y?: number; // Optional - offset in Y-axis (perpendicular to span)
+  z?: number; // Optional - offset in Z-axis (perpendicular to span)
+}
 
+// Defines the structure for a support point on a beam.
+// Position can be:
+// - number: 1D position along span (legacy, backward compatible)
+// - Coordinate: 3D position with optional y,z offsets
 export interface Support {
-  position: number;
+  position: number | Coordinate;
   fixity: SupportFixityType;
   reaction?: {
     Fx?: AppliedLoads;
@@ -552,7 +561,6 @@ export interface Element {
     span: number;
     spacing: number; 
     section_count: number; // Number of sections in the element
-
 
     //  section properties
     sections: SectionProperties[]; // Array to support multiple sections 

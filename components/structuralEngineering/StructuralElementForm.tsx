@@ -586,6 +586,41 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         updateElement(prev => ({ ...prev, supports: newSupports }));
     };
 
+    /**
+     * Handles changes to support coordinate fields (X, Y, Z)
+     */
+    const handleSupportCoordinateChange = (index: number, axis: 'x' | 'y' | 'z', value: string) => {
+        const newSupports = [...element.supports];
+        const currentPos = newSupports[index].position;
+        
+        // Convert current position to Coordinate if it's a number
+        let coordPos: import('../../customTypes/structuralElement').Coordinate;
+        if (typeof currentPos === 'number') {
+            coordPos = { x: currentPos };
+        } else {
+            coordPos = { ...currentPos };
+        }
+        
+        // Update the specific axis
+        const numValue = parseFloat(value);
+        if (axis === 'x') {
+            coordPos.x = isNaN(numValue) ? 0 : numValue;
+        } else if (axis === 'y') {
+            coordPos.y = isNaN(numValue) || numValue === 0 ? undefined : numValue;
+        } else if (axis === 'z') {
+            coordPos.z = isNaN(numValue) || numValue === 0 ? undefined : numValue;
+        }
+        
+        // If y and z are both undefined, convert back to simple number
+        if (coordPos.y === undefined && coordPos.z === undefined) {
+            newSupports[index] = { ...newSupports[index], position: coordPos.x };
+        } else {
+            newSupports[index] = { ...newSupports[index], position: coordPos };
+        }
+        
+        updateElement(prev => ({ ...prev, supports: newSupports }));
+    };
+
     const addSupport = () => updateElement(prev => ({...prev, supports: [...prev.supports, { position: prev.span, fixity: SupportFixityType.Roller }]}));
     
     const removeSupport = (index: number) => updateElement(prev => ({...prev, supports: prev.supports.filter((_, i) => i !== index)}));
@@ -985,12 +1020,26 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         }
     };
 
+    // Helper: Extract x position from number | Coordinate
+    const getSupportPositionValue = (pos: number | import('../../customTypes/structuralElement').Coordinate): number => {
+        return typeof pos === 'number' ? pos : pos.x;
+    };
+
+    // Helper: Format position for display
+    const formatSupportPosition = (pos: number | import('../../customTypes/structuralElement').Coordinate): string => {
+        if (typeof pos === 'number') return pos.toString();
+        return `x:${pos.x}${pos.y !== undefined ? `, y:${pos.y}` : ''}${pos.z !== undefined ? `, z:${pos.z}` : ''}`;
+    };
+
     // Helper: Validation for support/load positions
-    const isSupportPositionInvalid = (pos: number) => element?.span ? pos > element.span : false;
+    const isSupportPositionInvalid = (pos: number | import('../../customTypes/structuralElement').Coordinate) => {
+        const posValue = getSupportPositionValue(pos);
+        return element?.span ? posValue > element.span : false;
+    };
     const isLoadPositionInvalid = (pos: string) => element?.span ? Number(pos) > element.span : false;
     const hasDuplicateSupportPositions = () => {
         if (!element?.supports) return false;
-        const positions = element.supports.map(s => s.position);
+        const positions = element.supports.map(s => getSupportPositionValue(s.position));
         return new Set(positions).size !== positions.length;
     };
     const anySupportInvalid = element?.supports ? (element.supports.some(s => isSupportPositionInvalid(s.position)) || hasDuplicateSupportPositions()) : false;
@@ -1751,25 +1800,79 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 {label: 'Positions', value: element.supports, arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 3, unit: 'm' }
 
             ]}>
-                {element.supports.map((support, index) => (
-                    <div key={index} className="p-3 bg-secondary border border-sky-200 rounded-lg grid grid-cols-[1fr_1fr_auto] gap-3 items-center mb-2">
-                        <div>
-                            <label className={labelClasses}>Position (m)</label>
-                            <input 
-                                type="number" 
-                                step="any" 
-                                name="position" 
-                                value={support.position} 
-                                onChange={(e) => handleSupportChange(index, e)} 
-                                className={`${inputClasses} ${isSupportPositionInvalid(support.position) || (element.supports.filter(sup => sup.position === support.position).length > 1) ? 'border-red-500' : ''}`} 
-                            />
-                            {isSupportPositionInvalid(support.position) && <p className="text-xs text-red-500 mt-1">Position ({support.position}) &gt; Span ({element.span})</p>}
-                            {(element.supports.filter(sup => sup.position === support.position).length > 1) && <p className="text-xs text-red-500 mt-1">Duplicate support position</p>}
+                {element.supports.map((support, index) => {
+                    const currentPos = support.position;
+                    const xValue = typeof currentPos === 'number' ? currentPos : currentPos.x;
+                    const yValue = typeof currentPos === 'number' ? 0 : (currentPos.y || 0);
+                    const zValue = typeof currentPos === 'number' ? 0 : (currentPos.z || 0);
+                    
+                    return (
+                    <div key={index} className="p-3 bg-secondary border border-sky-200 rounded-lg mb-2">
+                        <div className="grid grid-cols-[2fr_1fr_auto] gap-3 items-start">
+                            {/* Position Coordinates */}
+                            <div className="space-y-2">
+                                <label className={labelClasses}>Position Coordinates (m)</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="text-xs text-gray-600 mb-1 block">X (along span) *</label>
+                                        <input 
+                                            type="number" 
+                                            step="any" 
+                                            value={xValue} 
+                                            onChange={(e) => handleSupportCoordinateChange(index, 'x', e.target.value)} 
+                                            className={`${inputClasses} ${isSupportPositionInvalid(support.position) || (element.supports.filter(sup => getSupportPositionValue(sup.position) === getSupportPositionValue(support.position)).length > 1) ? 'border-red-500' : ''}`} 
+                                            placeholder="0.0"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-600 mb-1 block">Y (perpendicular)</label>
+                                        <input 
+                                            type="number" 
+                                            step="any" 
+                                            value={yValue} 
+                                            onChange={(e) => handleSupportCoordinateChange(index, 'y', e.target.value)} 
+                                            className={inputClasses}
+                                            placeholder="0.0"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-600 mb-1 block">Z (perpendicular)</label>
+                                        <input 
+                                            type="number" 
+                                            step="any" 
+                                            value={zValue} 
+                                            onChange={(e) => handleSupportCoordinateChange(index, 'z', e.target.value)} 
+                                            className={inputClasses}
+                                            placeholder="0.0"
+                                        />
+                                    </div>
+                                </div>
+                                {isSupportPositionInvalid(support.position) && <p className="text-xs text-red-500 mt-1">Position ({formatSupportPosition(support.position)}) &gt; Span ({element.span})</p>}
+                                {(element.supports.filter(sup => getSupportPositionValue(sup.position) === getSupportPositionValue(support.position)).length > 1) && <p className="text-xs text-red-500 mt-1">Duplicate support position</p>}
+                            </div>
+                            
+                            {/* Fixity */}
+                            <div>
+                                <label className={labelClasses}>Fixity</label>
+                                <select name="fixity" value={support.fixity} onChange={(e) => handleSupportChange(index, e)} className={inputClasses}>
+                                    {Object.values(SupportFixityType).map(f => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                            </div>
+                            
+                            {/* Remove Button */}
+                            <button 
+                                type="button" 
+                                onClick={() => removeSupport(index)} 
+                                className="text-red-500 hover:text-red-700 disabled:opacity-50 self-end" 
+                                disabled={element.supports.length === 1}
+                                title="Remove support"
+                            >
+                                <RemoveIcon className="w-6 h-6"/>
+                            </button>
                         </div>
-                        <div><label className={labelClasses}>Fixity</label><select name="fixity" value={support.fixity} onChange={(e) => handleSupportChange(index, e)} className={inputClasses}>{Object.values(SupportFixityType).map(f => <option key={f} value={f}>{f}</option>)}</select></div>
-                        <button type="button" onClick={() => removeSupport(index)} className="text-red-500 hover:text-red-700 disabled:opacity-50 self-end mb-1" disabled={element.supports.length === 1}><RemoveIcon className="w-6 h-6"/></button>
                     </div>
-                ))}
+                    );
+                })}
                 <button type="button" onClick={addSupport} className="w-full mt-2 flex items-center justify-center gap-2 text-sm font-semibold p-2 border-2 border-dashed border-gray-300 rounded-lg text-sky-700 hover:border-sky-500 hover:bg-sky-50"><AddIcon className="w-5 h-5"/> Add Support</button>
                 {hasDuplicateSupportPositions() && (
                 <div className="text-xs text-red-500 mt-1">Two supports cannot have the same position.</div>
