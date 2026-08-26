@@ -1,7 +1,10 @@
 // services/analysisService.ts: Calls a remote backend for beam analysis.
 
 import { type Load, type Support, type BeamInput,  type BeamOutput, LoadType, SupportFixityType , Element as StructuralElement, DesignOutput, LoadCombination, AppliedLoads, LoadCaseType} from '../customTypes/structuralElement'
-const STRUCTURAL_SERVICES_URL = 'https://rosarcbim-structural-api-701061055216.europe-west2.run.app/';
+// Backend base URL is environment-driven. Set VITE_API_BASE in your .env
+// (e.g. https://rosarcbim-structural-api-xxxx.run.app). Falls back to the
+// local dev structural API.
+const STRUCTURAL_SERVICES_URL = (import.meta.env.VITE_API_BASE || 'http://localhost:8001').replace(/\/$/, '');
  
 /**
  * Calls a remote beam analysis API to get calculation results.
