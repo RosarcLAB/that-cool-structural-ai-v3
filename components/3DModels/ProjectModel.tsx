@@ -5,7 +5,7 @@ import { Canvas, ThreeEvent, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment } from '@react-three/drei';
 import { Vector3 } from 'three';
 import { Project } from '../../customTypes/types';
-import { Element, ELEMENT_TYPE_OPTIONS, SupportFixityType } from '../../customTypes/structuralElement';
+import { Element, ELEMENT_TYPE_OPTIONS, SupportFixityType, getCoordinateValues } from '../../customTypes/structuralElement';
 import { MaterialType, SectionShape } from '../../customTypes/SectionProperties';
 import StructuralElement3D from './StructuralElement3D';
 import DrawingPreview from './DrawingPreview';
@@ -29,19 +29,19 @@ interface ProjectModelProps {
 const calculateElementLayout = (elements: Element[]) => {
   const positions: Record<string, [number, number, number]> = {};
   const gridSize = 3; // meters between elements
-  
+
   elements.forEach((element, index) => {
     // Use grid layout for positioning
     const row = Math.floor(index / 5);
     const col = index % 5;
-    
+
     positions[element.id || index.toString()] = [
       col * gridSize,
       0,
       row * gridSize
     ];
   });
-  
+
   return positions;
 };
 
@@ -78,13 +78,13 @@ const DrawingPlane: React.FC<{
   );
 };
 
-const ProjectModel: React.FC<ProjectModelProps> = ({ 
-  isOpen, 
-  project, 
-  onClose, 
-  width, 
+const ProjectModel: React.FC<ProjectModelProps> = ({
+  isOpen,
+  project,
+  onClose,
+  width,
   onMouseDownOnResizer,
-  onUpdateProject 
+  onUpdateProject
 }) => {
   const [localProject, setLocalProject] = useState<Project>(project);
   const [selectedElement, setSelectedElement] = useState<Element | null>(null);
@@ -95,11 +95,12 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
     element: Element | null;
   }>({ isOpen: false, position: { x: 0, y: 0 }, element: null });
   const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
-  
+
   // Node manager instance
   const nodeManagerRef = useRef<NodeManager>(new NodeManager());
   const [nodes, setNodes] = useState<Node3D[]>([]);
   const [hoveredNode, setHoveredNode] = useState<Node3D | null>(null);
+  const [isLoadingNodes, setIsLoadingNodes] = useState(false);
 
   const {
     isDrawingMode,
@@ -117,53 +118,91 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
     [localProject.elements]
   );
 
-  // Update local project when prop changes
+  // Update local project with incremental node updates, debouncing, and loading state
   React.useEffect(() => {
-    setLocalProject(project);
-    
-    // Initialize nodes from project elements
-    const nodeManager = nodeManagerRef.current;
-    nodeManager.clear(); // Start fresh
-    
-    // Create nodes for elements that have position-based layout
-    project.elements?.forEach((element, index) => {
-      const element3D = element as Element3D;
-      
-      // Skip if element already has node connections
-      if (element3D.startNodeId && element3D.endNodeId) {
-        return;
-      }
-      
-      const position = elementPositions[element.id || index.toString()] || [index * 2, 0, 0];
-      const span = element.span || 2;
-      
-      // Create start and end nodes for each element at Y=0 (ground plane)
-      const startPos: [number, number, number] = [position[0] - span/2, 0, position[2]];
-      const endPos: [number, number, number] = [position[0] + span/2, 0, position[2]];
-      
-      const startNode = nodeManager.getOrCreateNodeAt(startPos);
-      const endNode = nodeManager.getOrCreateNodeAt(endPos);
-      
-      // Connect element to nodes
-      if (element.id) {
-        nodeManager.connectElement(element.id, startNode.id, endNode.id);
-        
-        // Update element with node IDs
-        element3D.startNodeId = startNode.id;
-        element3D.endNodeId = endNode.id;
-      }
-    });
-    
-    setNodes(nodeManager.getAllNodes());
+    // Debounce: Wait for changes to settle before processing
+    const timeoutId = setTimeout(() => {
+      setIsLoadingNodes(true);
+
+      // Defer to next frame for non-blocking UI
+      requestAnimationFrame(() => {
+        setLocalProject(project);
+
+        const nodeManager = nodeManagerRef.current;
+
+        // Get existing element IDs that already have nodes
+        const existingElementIds = new Set<string>();
+        nodeManager.getAllNodes().forEach(node => {
+          node.connectedElementIds.forEach(id => existingElementIds.add(id));
+        });
+
+        // Get current element IDs from project
+        const currentElementIds = new Set(
+          (project.elements || []).map(e => e.id).filter((id): id is string => !!id)
+        );
+
+        // INCREMENTAL UPDATE: Only process NEW or CHANGED elements
+        project.elements?.forEach((element, index) => {
+          const element3D = element as Element3D;
+          const elementId = element.id || index.toString();
+
+          // Skip if element already has nodes and hasn't changed
+          if (element3D.startNodeId && element3D.endNodeId &&
+              existingElementIds.has(elementId)) {
+            return; // Already processed - skip
+          }
+
+          // Prefer the element's real, persisted position. Only elements
+          // saved before startPoint/endPoint existed fall back to the grid
+          // layout (calculateElementLayout), so old projects keep working
+          // with no migration.
+          let startPos: [number, number, number];
+          let endPos: [number, number, number];
+          if (element.startPoint && element.endPoint) {
+            startPos = getCoordinateValues(element.startPoint);
+            endPos = getCoordinateValues(element.endPoint);
+          } else {
+            const position = elementPositions[elementId] || [index * 2, 0, 0];
+            const span = element.span || 2;
+            startPos = [position[0] - span/2, 0, position[2]];
+            endPos = [position[0] + span/2, 0, position[2]];
+          }
+
+          const startNode = nodeManager.getOrCreateNodeAt(startPos);
+          const endNode = nodeManager.getOrCreateNodeAt(endPos);
+
+          // Connect element to nodes
+          if (element.id) {
+            nodeManager.connectElement(element.id, startNode.id, endNode.id);
+
+            // Update element with node IDs
+            element3D.startNodeId = startNode.id;
+            element3D.endNodeId = endNode.id;
+          }
+        });
+
+        // Clean up: Remove nodes for deleted elements
+        existingElementIds.forEach(id => {
+          if (!currentElementIds.has(id)) {
+            nodeManager.disconnectElement(id);
+          }
+        });
+
+        setNodes(nodeManager.getAllNodes());
+        setIsLoadingNodes(false);
+      });
+    }, 100); // Debounce delay: 100ms
+
+    return () => clearTimeout(timeoutId);
   }, [project, elementPositions]);
 
   const createElementFromLine = useCallback((start: Vector3, end: Vector3) => {
     const nodeManager = nodeManagerRef.current;
-    
+
     // Get or create nodes at start and end positions
     const startNode = nodeManager.getOrCreateNodeAt([start.x, start.y, start.z]);
     const endNode = nodeManager.getOrCreateNodeAt([end.x, end.y, end.z]);
-    
+
     // Calculate span from nodes
     const span = calculateSpanFromNodes(startNode, endNode);
 
@@ -200,6 +239,10 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
       appliedLoads: [],
       loadCombinations: [],
       reactions: [],
+      // Real position in project space, captured directly from where the
+      // user drew the element.
+      startPoint: { x: start.x, y: start.y, z: start.z },
+      endPoint: { x: end.x, y: end.y, z: end.z },
       // Node connections
       startNodeId: startNode.id,
       endNodeId: endNode.id,
@@ -207,7 +250,7 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
 
     // Connect element to nodes
     nodeManager.connectElement(newElement.id, startNode.id, endNode.id);
-    
+
     // Update nodes state
     setNodes(nodeManager.getAllNodes());
 
@@ -292,10 +335,10 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
 
     if (confirm('Are you sure you want to delete this element?')) {
       const nodeManager = nodeManagerRef.current;
-      
+
       // Disconnect element from nodes
       nodeManager.disconnectElement(idToDelete);
-      
+
       const updatedProject = {
         ...localProject,
         elements: (localProject.elements || []).filter((el) => el.id !== idToDelete),
@@ -305,10 +348,10 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
       if (onUpdateProject) {
         onUpdateProject(updatedProject);
       }
-      
+
       // Update nodes state
       setNodes(nodeManager.getAllNodes());
-      
+
       if (selectedElement?.id === idToDelete) {
         setSelectedElement(null);
       }
@@ -327,7 +370,7 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
     if (onUpdateProject) {
       onUpdateProject(updatedProject);
     }
-    
+
     setSelectedElement(null);
   };
 
@@ -344,8 +387,8 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
       />
 
       {/* Panel Content */}
-      <div 
-        className="flex-shrink-0 bg-base-100 shadow-lg flex flex-col h-full" 
+      <div
+        className="flex-shrink-0 bg-base-100 shadow-lg flex flex-col h-full"
         style={{ width: `${width}px` }}
       >
         {/* Header */}
@@ -398,6 +441,16 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
 
         {/* 3D Canvas */}
         <div className="flex-grow relative">
+          {/* Loading Indicator */}
+          {isLoadingNodes && (
+            <div className="absolute inset-0 flex items-center justify-center bg-base-300/50 z-50 backdrop-blur-sm">
+              <div className="text-center">
+                <div className="loading loading-spinner loading-lg text-primary"></div>
+                <p className="mt-2 text-sm font-medium">Loading 3D Model...</p>
+              </div>
+            </div>
+          )}
+
           <Canvas
             shadows
             dpr={[1, 2]}
@@ -423,9 +476,9 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
             <Environment preset="city" />
 
             {/* Grid helper for ground plane */}
-            <Grid 
-              args={[20, 20]} 
-              cellSize={1} 
+            <Grid
+              args={[20, 20]}
+              cellSize={1}
               cellThickness={0.5}
               cellColor="#6b7280"
               sectionSize={5}
@@ -437,7 +490,7 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
             />
 
             {/* Drawing plane */}
-            <DrawingPlane 
+            <DrawingPlane
               onPlaneClick={handlePlaneClick}
               onPlaneMove={handlePlaneMove}
               isDrawingMode={isDrawingMode}
@@ -456,17 +509,17 @@ const ProjectModel: React.FC<ProjectModelProps> = ({
               {localProject.elements?.map((element, index) => {
                 const element3D = element as Element3D;
                 const nodeManager = nodeManagerRef.current;
-                
+
                 // Get nodes for this element
                 const startNode = element3D.startNodeId ? nodeManager.getNode(element3D.startNodeId) : undefined;
                 const endNode = element3D.endNodeId ? nodeManager.getNode(element3D.endNodeId) : undefined;
-                
+
                 // Fallback to grid position if no nodes
                 const position = elementPositions[element.id || index.toString()] || [index * 2, 0, 0];
-                
+
                 return (
-                  <StructuralElement3D 
-                    key={element.id || index} 
+                  <StructuralElement3D
+                    key={element.id || index}
                     element={element}
                     position={position}
                     startNode={startNode}

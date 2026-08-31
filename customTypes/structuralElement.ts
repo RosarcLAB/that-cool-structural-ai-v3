@@ -47,7 +47,7 @@ export enum LoadCaseType {
 
 export enum BuildingCodeType {
   ASCE7_22 = 'ASCE 7-22',
-  ASCE7_16 = 'ASCE 7-16', 
+  ASCE7_16 = 'ASCE 7-16',
   IBC_2021 = 'IBC 2021',
   IBC_2018 = 'IBC 2018',
   EUROCODE_1 = 'Eurocode 1',
@@ -57,12 +57,12 @@ export enum BuildingCodeType {
   CUSTOM = 'Custom',
   NONE = 'None'
 }
- 
+
 // Represents the design method for load combinations
 
 export enum DesignMethodType {
   LRFD = 'LRFD',
-  ASD = 'ASD', 
+  ASD = 'ASD',
   ULD = 'ULD',
   WSD = 'WSD',
   NONE = 'None'
@@ -73,6 +73,85 @@ export interface Coordinate {
   x: number;  // Required - position along element span or X-axis
   y?: number; // Optional - offset in Y-axis (perpendicular to span)
   z?: number; // Optional - offset in Z-axis (perpendicular to span)
+}
+
+export function isCoordinate(pos: number | Coordinate): pos is Coordinate {
+  return typeof pos === 'object' && pos !== null && 'x' in pos;
+}
+
+export function getCoordinateValues(pos: number | Coordinate): [number, number, number] {
+  if (isCoordinate(pos)) {
+    return [pos.x, pos.y ?? 0, pos.z ?? 0];
+  }
+  return [pos, 0, 0];
+}
+
+// Dominant axis of the element's start->end vector; defaults to 'x' when
+// points are unset or coincide (matches the 3D view's default horizontal
+// orientation for legacy elements with no stored position).
+export function getElementSpanAxis(element: Pick<Element, 'startPoint' | 'endPoint'>): 'x' | 'y' | 'z' {
+  if (!element.startPoint || !element.endPoint) return 'x';
+  const [x1, y1, z1] = getCoordinateValues(element.startPoint);
+  const [x2, y2, z2] = getCoordinateValues(element.endPoint);
+  const dx = Math.abs(x2 - x1);
+  const dy = Math.abs(y2 - y1);
+  const dz = Math.abs(z2 - z1);
+  if (dx >= dy && dx >= dz) return 'x';
+  if (dy >= dx && dy >= dz) return 'y';
+  return 'z';
+}
+
+// Fallback start/end points for elements with no stored position: horizontal
+// along X, matching ProjectModel.tsx's existing default orientation.
+export function getDefaultElementPoints(element: Pick<Element, 'span' | 'startPoint' | 'endPoint'>): { startPoint: Coordinate; endPoint: Coordinate } {
+  return {
+    startPoint: element.startPoint ?? { x: 0, y: 0, z: 0 },
+    endPoint: element.endPoint ?? { x: element.span || 0, y: 0, z: 0 },
+  };
+}
+
+// Linear interpolation from start to end at t = localPos/span. Handles
+// diagonal (non-axis-aligned) elements, not just axis-aligned ones.
+export function getAbsolutePositionOnElement(element: Pick<Element, 'span' | 'startPoint' | 'endPoint'>, localPos: number): Coordinate {
+  const { startPoint, endPoint } = getDefaultElementPoints(element);
+  const span = element.span || 0;
+  if (span === 0) return startPoint;
+  const t = localPos / span;
+  return {
+    x: startPoint.x + t * (endPoint.x - startPoint.x),
+    y: (startPoint.y ?? 0) + t * ((endPoint.y ?? 0) - (startPoint.y ?? 0)),
+    z: (startPoint.z ?? 0) + t * ((endPoint.z ?? 0) - (startPoint.z ?? 0)),
+  };
+}
+
+// Vector projection of coord onto the start->end line; inverse of
+// getAbsolutePositionOnElement. Returns the local distance from start.
+export function getLocalPositionFromCoordinate(element: Pick<Element, 'span' | 'startPoint' | 'endPoint'>, coord: Coordinate): number {
+  const { startPoint, endPoint } = getDefaultElementPoints(element);
+  const [sx, sy, sz] = getCoordinateValues(startPoint);
+  const [ex, ey, ez] = getCoordinateValues(endPoint);
+  const [cx, cy, cz] = getCoordinateValues(coord);
+  const dx = ex - sx, dy = ey - sy, dz = ez - sz;
+  const lengthSq = dx * dx + dy * dy + dz * dz;
+  if (lengthSq === 0) return 0;
+  const t = ((cx - sx) * dx + (cy - sy) * dy + (cz - sz) * dz) / lengthSq;
+  return t * Math.sqrt(lengthSq);
+}
+
+export function distanceBetween(a: Coordinate, b: Coordinate): number {
+  const [ax, ay, az] = getCoordinateValues(a);
+  const [bx, by, bz] = getCoordinateValues(b);
+  return Math.sqrt((bx - ax) ** 2 + (by - ay) ** 2 + (bz - az) ** 2);
+}
+
+export function coordinatesEqual(a: Coordinate, b: Coordinate, tolerance: number = 0.001): boolean {
+  const [ax, ay, az] = getCoordinateValues(a);
+  const [bx, by, bz] = getCoordinateValues(b);
+  return (
+    Math.abs(ax - bx) < tolerance &&
+    Math.abs(ay - by) < tolerance &&
+    Math.abs(az - bz) < tolerance
+  );
 }
 
 // Defines the structure for a support point on a beam.
@@ -147,7 +226,7 @@ export interface LoadCaseFactor {
 }
 // Computed load result for a specific load after applying combination factors
 
- 
+
 
 // Load combination result for the entire structure
 export interface LoadCombination {
@@ -211,11 +290,11 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
       const factor = combination.loadCaseFactors.find(
         lcf => lcf.loadCaseType === force.loadCase && (lcf.isActive !== false)
       );
-      
+
       if (factor) {
         // Apply both the load factor and term factor
         const combinedFactor = factor.factor * factor.termFactor;
-        
+
         if (totalMagnitude.length === 0) {
           totalMagnitude = force.magnitude.map(mag => mag * combinedFactor);
         } else {
@@ -254,13 +333,13 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
   /**
    * Ensures individual load combinations exist for reaction analysis.
    * Analyzes existing combinations and creates individual load case combinations as needed.
-   * 
+   *
    * @param element - The structural element to process
    * @param options - Configuration options
    * @returns Updated element with individual load combinations added
    */
   reactionLoadCombinations(
-    element: Element, 
+    element: Element,
     options: {
       forceRegenerate?: boolean;
       includeInactive?: boolean;
@@ -268,18 +347,18 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
     } = {}
   ): Element {
     const { forceRegenerate = false, includeInactive = false, customFactors = {} } = options;
-    
+
     // Create a copy of the element to avoid mutation
     const updatedElement: Element = { ...element };
-    
+
     // Ensure loadCombinations array exists
     if (!updatedElement.loadCombinations) {
       updatedElement.loadCombinations = [];
     }
-    
+
     // Get all unique load case types from appliedLoads
     const allLoadCaseTypes = new Set<LoadCaseType>();
-    
+
     if (updatedElement.appliedLoads) {
       updatedElement.appliedLoads.forEach(appliedLoad => {
         appliedLoad.forces.forEach(force => {
@@ -287,7 +366,7 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
         });
       });
     }
-    
+
     // Also check existing combinations for additional load case types
     updatedElement.loadCombinations.forEach(combination => {
       if (includeInactive || combination.isActive !== false) {
@@ -296,30 +375,30 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
         });
       }
     });
-    
+
     // Track existing individual combinations to avoid duplicates
     const existingIndividualCombinations = new Set<string>();
-    
+
     if (!forceRegenerate) {
       updatedElement.loadCombinations.forEach(combination => {
-        if (combination.combinationType === 'Reaction' && 
+        if (combination.combinationType === 'Reaction' &&
             combination.loadCaseFactors.length === 1) {
           const loadCaseType = combination.loadCaseFactors[0].loadCaseType;
           existingIndividualCombinations.add(loadCaseType);
         }
       });
     }
-    
+
     // Create individual combinations for each load case type
     const newIndividualCombinations: LoadCombination[] = [];
-    
+
     allLoadCaseTypes.forEach(loadCaseType => {
       if (forceRegenerate || !existingIndividualCombinations.has(loadCaseType)) {
         // Get custom factors or use defaults
         const customFactor = customFactors[loadCaseType];
         const factor = customFactor?.factor ?? 1.0;
         const termFactor = customFactor?.termFactor ?? 1.0;
-        
+
         const individualCombination: LoadCombination = {
           id: this.generateCombinationId(loadCaseType, 'reaction'),
           name: loadCaseType,
@@ -334,46 +413,46 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
             isActive: true
           }]
         };
-        
+
         newIndividualCombinations.push(individualCombination);
       }
     });
-    
+
     // If regenerating, remove existing individual combinations first
     if (forceRegenerate) {
       updatedElement.loadCombinations = updatedElement.loadCombinations.filter(
-        combination => !(combination.combinationType === 'Reaction' && 
+        combination => !(combination.combinationType === 'Reaction' &&
                         combination.loadCaseFactors.length === 1)
       );
     }
-    
+
     // Add new individual combinations
     updatedElement.loadCombinations.push(...newIndividualCombinations);
-    
+
     // Ensure all existing combinations have IDs
     updatedElement.loadCombinations.forEach(combination => {
       if (!combination.id) {
         combination.id = this.generateCombinationId(
-          combination.name, 
+          combination.name,
           combination.combinationType?.toLowerCase()
         );
       }
     });
-    
+
     // Populate reactions array with individual combinations
     if (!updatedElement.reactions) {
       updatedElement.reactions = [];
     }
-    
+
     // Add individual combinations to reactions array (avoiding duplicates)
     const existingReactionIds = new Set(updatedElement.reactions.map(r => r.id).filter(Boolean));
-    
+
     newIndividualCombinations.forEach(combination => {
       if (!existingReactionIds.has(combination.id)) {
         updatedElement.reactions.push({ ...combination });
       }
     });
-    
+
     return updatedElement;
   }
 
@@ -384,9 +463,9 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
    */
   getIndividualCombinations(element: Element): LoadCombination[] {
     if (!element.loadCombinations) return [];
-    
-    return element.loadCombinations.filter(combination => 
-      combination.combinationType === 'Reaction' && 
+
+    return element.loadCombinations.filter(combination =>
+      combination.combinationType === 'Reaction' &&
       combination.loadCaseFactors.length === 1 &&
       combination.isActive !== false
     );
@@ -409,7 +488,7 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
     const multiFactorCombinations = element.loadCombinations?.filter(
       combination => combination.loadCaseFactors.length > 1 && combination.isActive !== false
     ) ?? [];
-    
+
     // Get all load case types from appliedLoads
     const allLoadCaseTypes = new Set<LoadCaseType>();
     if (element.appliedLoads) {
@@ -419,14 +498,14 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
         });
       });
     }
-    
+
     // Find missing individual combinations
     const existingIndividualTypes = new Set(
       individualCombinations.map(c => c.loadCaseFactors[0].loadCaseType)
     );
     const missingIndividualCombinations = Array.from(allLoadCaseTypes)
       .filter(type => !existingIndividualTypes.has(type));
-    
+
     return {
       totalCombinations,
       individualCombinations: individualCombinations.length,
@@ -456,7 +535,7 @@ export class LoadCombinationUtils implements LoadCombinationCalculator {
           position: [pos],
           forces: loads.map(l => ({ magnitude: l.magnitude, loadCase: combo.loadCaseFactors[0].loadCaseType })),
           description: `Transfer of ${combo.name} from ${element.name}`
-        };  
+        };
       });
     }
 }
@@ -559,11 +638,18 @@ export interface Element {
     // Geometric properties
     sectionName: string; // Section designation (e.g., "240x90 SG8 Timber")
     span: number;
-    spacing: number; 
+    spacing: number;
     section_count: number; // Number of sections in the element
 
+    // Absolute position in project space (distinct from Support.position,
+    // which is local to the element's own span). Optional for backward
+    // compatibility with elements saved before this field existed - see
+    // getDefaultElementPoints() for the fallback used when absent.
+    startPoint?: Coordinate;
+    endPoint?: Coordinate;
+
     //  section properties
-    sections: SectionProperties[]; // Array to support multiple sections 
+    sections: SectionProperties[]; // Array to support multiple sections
 
 
     // Material properties (legacy - kept for backward compatibility)
@@ -580,11 +666,11 @@ export interface Element {
     loadCombinations: LoadCombination[];
     appliedLoads: AppliedLoads[];
 
-    //Design Methodology 
+    //Design Methodology
     designMethod?: DesignMethodType;
     buildingCode?: BuildingCodeType;
     designParameters?: DesignParameters; // Optional design parameters for this element
-    //noofSections?: number; 
+    //noofSections?: number;
 
     // Analysis results (computed)
     // reactions?: { [key: string]: number[] }; // e.g. { "0": [Fx, Fy, Mz], "6": [Fx, Fy, Mz] }
@@ -601,21 +687,21 @@ export interface Element {
     combinationResults?: { [combinationId: string]: BeamOutput; };
     projectId?: string;
     reactions: LoadCombination[];
-    
+
     // Design results
     designResults?: DesignOutput[];
   // New optional status message attached to the element (for UI feedback & audit)
   statusMessage?: StatusMessage;
-    
+
     // Document content from text editor
     documentContent?: any[]; // Slate.js document content (rich text)
     documentPlainText?: string; // Plain text version for search and display
-    
+
     // Persistence tracking
     isSaved?: boolean; // True if element has been saved to Firestore
     firestoreId?: string; // Firestore document ID
     createdAt?: any; // Firestore timestamp
-    updatedAt?: any; // Firestore timestamp  
+    updatedAt?: any; // Firestore timestamp
     version?: number; // Version number for history tracking
     previousVersion?: number; // Previous version number
     isActive?: boolean; // For soft delete

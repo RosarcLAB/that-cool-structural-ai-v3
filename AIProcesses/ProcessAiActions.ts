@@ -1,5 +1,5 @@
-import { Action, ChatMessage, CanvasItem } from '../customTypes/types';
-import { BeamInput, Element as StructuralElement, SupportFixityType, LoadType, LoadCaseType } from '../customTypes/structuralElement';
+import { Action, ChatMessage, CanvasItem, CoordinateAction, JoinElementsAction, LoadTransferAction } from '../customTypes/types';
+import { BeamInput, Element as StructuralElement, SupportFixityType, LoadType, LoadCaseType, Coordinate, getElementSpanAxis, getDefaultElementPoints, getCoordinateValues, getAbsolutePositionOnElement, getLocalPositionFromCoordinate, coordinatesEqual, distanceBetween } from '../customTypes/structuralElement';
 import { projectTransferRegistry } from '../services/projectTransferRegistry';
 
 /**
@@ -34,7 +34,7 @@ export class ProcessAiActions {
         this.handleElementFormSubmit = handleElementFormSubmit;
         this.handleElementFormCancel = handleElementFormCancel;
     }
-    
+
     public updateDependencies(
         messages: ChatMessage[],
         setMessages: (callback: (prevMessages: ChatMessage[]) => ChatMessage[]) => void,
@@ -98,12 +98,18 @@ export class ProcessAiActions {
             case 'remove_load_transfer':
                 this.handleRemoveLoadTransferAction(action);
                 break;
+            case 'move_coordinate':
+                this.handleMoveCoordinateAction(action);
+                break;
+            case 'join_elements':
+                this.handleJoinElementsAction(action);
+                break;
             // ... other top-level actions
             default:
                 this.handleFormManipulationAction(action, lastBeamFormMessage, lastElementFormMessage);
         }
     }
-    
+
     private handleFormManipulationAction(action: Action, lastBeamFormMessage?: ChatMessage, lastElementFormMessage?: ChatMessage): void {
         if (!('targetIndex' in action) || typeof action.targetIndex !== 'number') return;
 
@@ -140,7 +146,7 @@ export class ProcessAiActions {
      */
     private handleElementManipulation(action: any): void {
         this.saveHistorySnapshot();
-        
+
         if (action.targetContext === 'canvas') {
             // Update canvas items
             this.setCanvasItems(prevItems => {
@@ -172,7 +178,7 @@ export class ProcessAiActions {
                 });
             } else {
                 // Smart detection: check canvas first, then update there
-                const canvasItem = this.canvasItems.find(item => 
+                const canvasItem = this.canvasItems.find(item =>
                     item.type === 'element' && (item as any).data?.name === action.targetElementName
                 );
                 if (canvasItem) {
@@ -202,7 +208,7 @@ export class ProcessAiActions {
         });
 
         this.saveHistorySnapshot();
-        
+
         if (action.targetContext === 'canvas') {
             console.log('🖼️ Updating canvas beam');
             // Update canvas items
@@ -221,7 +227,7 @@ export class ProcessAiActions {
             // Update chat messages - use smart detection to find the item
             const targetItem = this.findBeamInMessages(action.targetBeamName);
             console.log('🔍 Target item found in messages:', !!targetItem);
-            
+
             if (targetItem) {
                 this.setMessages(prevMessages => {
                     return prevMessages.map(msg => {
@@ -241,11 +247,11 @@ export class ProcessAiActions {
             } else {
                 console.log('🔄 Smart detection: checking canvas');
                 // Smart detection: check canvas first, then update there
-                const canvasItem = this.canvasItems.find(item => 
+                const canvasItem = this.canvasItems.find(item =>
                     item.type === 'beam_input' && (item as any).data?.Name === action.targetBeamName
                 );
                 console.log('🖼️ Canvas item found:', !!canvasItem);
-                
+
                 if (canvasItem) {
                     this.setCanvasItems(prevItems => {
                         return prevItems.map(item => {
@@ -270,7 +276,7 @@ export class ProcessAiActions {
     private handleLegacyFormManipulation(action: Action, lastBeamFormMessage?: ChatMessage, lastElementFormMessage?: ChatMessage): void {
         // Cast to access targetIndex since we already checked it exists
         const manipulationAction = action as any;
-        
+
         console.log('🔧 Legacy form manipulation:', {
             action: action.type,
             targetIndex: manipulationAction.targetIndex,
@@ -302,21 +308,21 @@ export class ProcessAiActions {
                     beam = this.manipulateBeamData(beam, action);
                     updatedBeamData[manipulationAction.targetIndex] = beam;
                 }
-                
+
                 return { ...msg, elementData: updatedElementData, beamInputsData: updatedBeamData };
             }));
         } else {
             // No active forms in chat, try canvas items
             console.log('🖼️ No active forms in chat, checking canvas items');
-            
+
             // Since we don't have a specific target, try to manipulate the first relevant canvas item
             // This is a fallback behavior
             let canvasUpdated = false;
-            
+
             this.setCanvasItems(prevItems => {
                 return prevItems.map((item, index) => {
                     if (canvasUpdated) return item; // Only update the first matching item
-                    
+
                     if (item.type === 'element' && manipulationAction.targetIndex === 0) {
                         console.log('🔧 Manipulating first element in canvas');
                         const updatedElement = this.manipulateElementData({ ...(item as any).data }, action);
@@ -331,7 +337,7 @@ export class ProcessAiActions {
                     return item;
                 });
             });
-            
+
             if (!canvasUpdated) {
                 console.warn('⚠️ No forms found to manipulate in chat or canvas');
             }
@@ -500,7 +506,7 @@ export class ProcessAiActions {
             this.handleElementFormCancel(lastElementFormMessage.id, targetIndex);
         }
     }
-    
+
     /**
      * Handles submit_all action for all active forms
      */
@@ -526,7 +532,7 @@ export class ProcessAiActions {
      */
     private handleUpdateBeamFormAction(action: { type: 'update_beam_form', targetContext: 'chat' | 'canvas', targetBeamName: string, updatedProperties: Partial<BeamInput> }): void {
         this.saveHistorySnapshot();
-        
+
         if (action.targetContext === 'canvas') {
             // Update canvas items
             this.setCanvasItems(prevItems => {
@@ -557,7 +563,7 @@ export class ProcessAiActions {
                 });
             } else {
                 // Smart detection: check canvas first, then update there
-                const canvasItem = this.canvasItems.find(item => 
+                const canvasItem = this.canvasItems.find(item =>
                     item.type === 'beam_input' && (item as any).data?.Name === action.targetBeamName
                 );
                 if (canvasItem) {
@@ -579,7 +585,7 @@ export class ProcessAiActions {
      */
     private handleUpdateElementFormAction(action: { type: 'update_element_form', targetContext: 'chat' | 'canvas', targetElementName: string, updatedProperties: Partial<StructuralElement> }): void {
         this.saveHistorySnapshot();
-        
+
         if (action.targetContext === 'canvas') {
             // Update canvas items
             this.setCanvasItems(prevItems => {
@@ -610,7 +616,7 @@ export class ProcessAiActions {
                 });
             } else {
                 // Smart detection: check canvas first, then update there
-                const canvasItem = this.canvasItems.find(item => 
+                const canvasItem = this.canvasItems.find(item =>
                     item.type === 'element' && (item as any).data?.name === action.targetElementName
                 );
                 if (canvasItem) {
@@ -637,12 +643,16 @@ export class ProcessAiActions {
     }
 
     /**
-     * Handles add_load_transfer action
+     * Handles add_load_transfer action. Accepts either explicit
+     * supportIndex/targetPosition, or an atCoordinate that gets resolved to
+     * both: the source support sitting at that coordinate resolves
+     * supportIndex, and its projection onto the target element's span
+     * resolves targetPosition.
      */
-    private handleAddLoadTransferAction(action: { type: 'add_load_transfer', sourceElementName: string, supportIndex: number, targetElementName: string, targetPosition: number, targetContext: 'chat' | 'canvas' }): void {
+    private handleAddLoadTransferAction(action: Extract<LoadTransferAction, { type: 'add_load_transfer' }>): void {
         // Find source and target elements in the current messages
-        const { sourceElementName, supportIndex, targetElementName, targetPosition, targetContext } = action;
-        
+        const { sourceElementName, supportIndex: explicitSupportIndex, targetElementName, targetPosition: explicitTargetPosition, targetContext, atCoordinate } = action;
+
         this.setMessages(prev => prev.map(msg => {
             if (msg.type === 'element_form' && msg.elementData) {
                 const updatedElementData = msg.elementData.map(element => {
@@ -651,15 +661,34 @@ export class ProcessAiActions {
                         // Find source element to get reaction from
                         const sourceElement = this.findElementByName(sourceElementName, prev);
                         if (sourceElement && sourceElement.projectId === element.projectId) {
+                            // Resolve supportIndex/targetPosition from atCoordinate when given
+                            let supportIndex = explicitSupportIndex;
+                            let targetPosition = explicitTargetPosition;
+                            if (atCoordinate) {
+                                if (supportIndex === undefined) {
+                                    supportIndex = (sourceElement.supports || []).findIndex(s =>
+                                        coordinatesEqual(getAbsolutePositionOnElement(sourceElement, typeof s.position === 'number' ? s.position : s.position.x), atCoordinate)
+                                    );
+                                }
+                                if (targetPosition === undefined) {
+                                    targetPosition = getLocalPositionFromCoordinate(element, atCoordinate);
+                                }
+                            }
+                            if (supportIndex === undefined || supportIndex < 0 || targetPosition === undefined) {
+                                console.warn('Could not resolve support/position for load transfer', { sourceElementName, targetElementName, atCoordinate });
+                                return element;
+                            }
+                            const resolvedSupportIndex = supportIndex;
+                            const resolvedTargetPosition = targetPosition;
                             try {
                                 // Use projectTransferRegistry to create the transfer load
                                 const transferLoad = projectTransferRegistry.createPointLoadFromReaction(
                                     sourceElement,
-                                    supportIndex,
+                                    resolvedSupportIndex,
                                     element,
-                                    () => targetPosition
+                                    () => resolvedTargetPosition
                                 );
-                                
+
                                 // Add the transfer load to the target element
                                 return {
                                     ...element,
@@ -685,7 +714,7 @@ export class ProcessAiActions {
                     }
                     return element;
                 });
-                
+
                 return { ...msg, elementData: updatedElementData };
             }
             return msg;
@@ -697,7 +726,7 @@ export class ProcessAiActions {
      */
     private handleRemoveLoadTransferAction(action: { type: 'remove_load_transfer', targetElementName: string, transferGroupId: string, targetContext: 'chat' | 'canvas' }): void {
         const { targetElementName, transferGroupId } = action;
-        
+
         this.setMessages(prev => prev.map(msg => {
             if (msg.type === 'element_form' && msg.elementData) {
                 const updatedElementData = msg.elementData.map(element => {
@@ -713,11 +742,130 @@ export class ProcessAiActions {
                     }
                     return element;
                 });
-                
+
                 return { ...msg, elementData: updatedElementData };
             }
             return msg;
         }));
+    }
+
+    /**
+     * Applies an update function to a single named element, wherever it is
+     * found (chat message or canvas) - mirrors the location-aware lookup
+     * used by handleUpdateElementFormAction.
+     */
+    private updateElementByName(elementName: string, targetContext: 'chat' | 'canvas', updater: (element: StructuralElement) => StructuralElement): void {
+        if (targetContext === 'canvas') {
+            this.setCanvasItems(prevItems => prevItems.map(item => {
+                if (item.type === 'element' && (item as any).data?.name === elementName) {
+                    return { ...item, data: updater({ ...(item as any).data }) };
+                }
+                return item;
+            }));
+            return;
+        }
+        const targetItem = this.findElementInMessages(elementName);
+        if (targetItem) {
+            this.setMessages(prevMessages => prevMessages.map(msg => {
+                if (msg.type === 'element_form' && msg.elementData) {
+                    const updatedElementData = msg.elementData.map(element =>
+                        element.name === elementName ? updater(element) : element
+                    );
+                    return { ...msg, elementData: updatedElementData };
+                }
+                return msg;
+            }));
+        } else {
+            const canvasItem = this.canvasItems.find(item => item.type === 'element' && (item as any).data?.name === elementName);
+            if (canvasItem) {
+                this.setCanvasItems(prevItems => prevItems.map(item => {
+                    if (item.type === 'element' && (item as any).data?.name === elementName) {
+                        return { ...item, data: updater({ ...(item as any).data }) };
+                    }
+                    return item;
+                }));
+            } else {
+                console.warn('⚠️ No element found with name:', elementName);
+            }
+        }
+    }
+
+    /**
+     * Applies the recomputed span to an element given its (possibly
+     * updated) start/end points.
+     */
+    private withRecomputedSpan(element: StructuralElement, startPoint: Coordinate, endPoint: Coordinate): StructuralElement {
+        return { ...element, startPoint, endPoint, span: distanceBetween(startPoint, endPoint) };
+    }
+
+    /**
+     * Handles move_coordinate action - moves one end of an element along a
+     * given (or default) axis. Also covers "increase the span" requests,
+     * since span is just the recomputed distance between the two points.
+     */
+    private handleMoveCoordinateAction(action: CoordinateAction): void {
+        this.saveHistorySnapshot();
+        this.updateElementByName(action.targetElementName, action.targetContext, (element) => {
+            const { startPoint, endPoint } = getDefaultElementPoints(element);
+            const isStart = action.point === 'start';
+            const current = isStart ? startPoint : endPoint;
+            const axis = action.axis ?? getElementSpanAxis({ startPoint, endPoint });
+            const currentAxisValue = current[axis] ?? 0;
+            const newAxisValue = action.absolute !== undefined
+                ? action.absolute
+                : currentAxisValue + (action.delta ?? 0);
+            const updatedPoint: Coordinate = { ...current, [axis]: newAxisValue };
+            return this.withRecomputedSpan(
+                element,
+                isStart ? updatedPoint : startPoint,
+                isStart ? endPoint : updatedPoint
+            );
+        });
+    }
+
+    /**
+     * Handles join_elements action - snaps element B's point to element A's
+     * point (or to atCoordinate, moving both, if given), following the same
+     * dual-element chat lookup pattern as handleAddLoadTransferAction.
+     */
+    private handleJoinElementsAction(action: JoinElementsAction): void {
+        this.saveHistorySnapshot();
+        const { elementAName, elementAPoint, elementBName, elementBPoint, atCoordinate } = action;
+
+        this.setMessages(prev => {
+            const elementA = this.findElementByName(elementAName, prev);
+            if (!elementA) {
+                console.warn('⚠️ join_elements: element A not found:', elementAName);
+                return prev;
+            }
+            const aPoints = getDefaultElementPoints(elementA);
+            const aKey = elementAPoint === 'start' ? 'startPoint' : 'endPoint';
+            const anchor: Coordinate = atCoordinate ?? aPoints[aKey];
+
+            return prev.map(msg => {
+                if (msg.type !== 'element_form' || !msg.elementData) return msg;
+                const updatedElementData = msg.elementData.map(element => {
+                    if (element.name === elementBName) {
+                        const bPoints = getDefaultElementPoints(element);
+                        const bKey = elementBPoint === 'start' ? 'startPoint' : 'endPoint';
+                        return this.withRecomputedSpan(
+                            element,
+                            bKey === 'startPoint' ? anchor : bPoints.startPoint,
+                            bKey === 'endPoint' ? anchor : bPoints.endPoint
+                        );
+                    }
+                    if (atCoordinate && element.name === elementAName) {
+                        return this.withRecomputedSpan(
+                            element,
+                            aKey === 'startPoint' ? atCoordinate : aPoints.startPoint,
+                            aKey === 'endPoint' ? atCoordinate : aPoints.endPoint
+                        );
+                    }
+                    return element;
+                });
+                return { ...msg, elementData: updatedElementData };
+            });
+        });
     }
 
     /**

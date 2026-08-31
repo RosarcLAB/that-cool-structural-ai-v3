@@ -3,7 +3,7 @@ import { GeminiDecisionResponse, FilePayload } from '../customTypes/types';
 
 /**
  * Data transfer object for sending prompt messages to the AI orchestration service.
- * 
+ *
  * @interface promptMessageDTO
  * @property {string} user_message - The current message from the user to be processed by the AI
  * @property {Array<{role: string; parts: string[]}>} chat_history - The conversation history containing previous messages with roles and content parts
@@ -13,7 +13,7 @@ export interface promptMessageDTO {
     user_message: string;
     chat_history: { role: string; parts: string[] }[];
     file_payload?: FilePayload | null;
-}  
+}
 
 /**
  * The getAiDecision function sends a user's message and chat history to the AI service
@@ -23,10 +23,10 @@ export interface promptMessageDTO {
  * @returns [GeminiDecisionResponse] response from the AI service containing the chat response, beam inputs, and actions.
  */
 export async function getAiDecision
-( userMessage: string, 
-  chatHistory: { role: string; parts: string[] }[], 
-  filePayload?: FilePayload | null ): Promise<GeminiDecisionResponse> {  
-  
+( userMessage: string,
+  chatHistory: { role: string; parts: string[] }[],
+  filePayload?: FilePayload | null ): Promise<GeminiDecisionResponse> {
+
   const payload : promptMessageDTO = {
     user_message: userMessage,
     chat_history: chatHistory,
@@ -35,7 +35,12 @@ export async function getAiDecision
 
   console.log(payload);
 
-  const response = await fetch('http://localhost:8000/api/orchestration', {
+  // Backend base URL is environment-driven. Set VITE_ORCHESTRATOR_BASE in your
+  // .env (e.g. https://rosarcbim-api-xxxx.run.app/orchestrator). Falls back to
+  // local dev. No API key is ever sent from the browser — the server holds it.
+  const ORCHESTRATOR_BASE = (import.meta.env.VITE_ORCHESTRATOR_BASE || 'http://localhost:8000').replace(/\/$/, '');
+
+  const response = await fetch(`${ORCHESTRATOR_BASE}/api/orchestration`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -54,13 +59,13 @@ export async function getAiDecision
     });
     throw new Error(`API Error ${response.status}: ${errorText.substring(0, 200)}...`);
   }
-   
+
   const decision = await response.json() as GeminiDecisionResponse;
 
   // Initialize arrays if not present and validate structure
   decision.beamInputs = decision.beamInputs || [];
   decision.ElementForms = decision.ElementForms || [];
-  
+
   // Safety check for malformed responses
   if (typeof decision.chat_response !== 'string') {
     console.warn('Invalid response structure: chat_response is not a string');
@@ -75,7 +80,7 @@ export async function getAiDecision
   } else {
     console.log("Beam Inputs: None");
   }
-  
+
   if (decision.ElementForms && decision.ElementForms.length > 0) {
     console.log("Element Forms:", decision.ElementForms);
   } else {
@@ -91,4 +96,3 @@ export async function getAiDecision
 
   return decision;
 }
-

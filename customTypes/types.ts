@@ -1,9 +1,9 @@
 // types.ts: Defines the core data structures and type definitions for the application.
-import type { BeamInput, BeamOutput, Element, Support, Load, AppliedLoads, LoadCombination, LoadCaseFactor, StatusMessage } from './structuralElement';
+import type { BeamInput, BeamOutput, Element, Support, Load, AppliedLoads, LoadCombination, LoadCaseFactor, StatusMessage, Coordinate } from './structuralElement';
 import type { Timestamp, FieldValue } from 'firebase/firestore';
 
 
-//#region Chat  
+//#region Chat
 
 // Defines the sender of a chat message.
 export type ChatMessageSender = 'user' | 'ai';
@@ -11,7 +11,7 @@ export type ChatMessageSender = 'user' | 'ai';
 // Defines the type of content within a chat message.
 export type ChatMessageType = 'text' | 'beam_input_form' | 'beam_output_display' | 'element_form' | 'error';
 
-/** 
+/**
  * Represents a single message in the chat history type. */
 export interface ChatMessage {
   id: string;
@@ -56,8 +56,8 @@ export interface GeminiDecisionResponse {
 
 
 //#region --- AI Action   ---
-/** 
- * These are actions received from the AI to trigger Form events in the chat or canvas 
+/**
+ * These are actions received from the AI to trigger Form events in the chat or canvas
  *  'submit' - submits the form at targetIndex
  *  'cancel' - cancels the form at targetIndex
  *  'open_BeamInputForm' - opens a new Beam Input Form at targetIndex
@@ -149,10 +149,15 @@ export type FormManipulationAction = {
 export type LoadTransferAction = {
     type: 'add_load_transfer';
     sourceElementName: string;
-    supportIndex: number;
     targetElementName: string;
-    targetPosition: number; // Position on target element where load should be placed
     targetContext: 'chat' | 'canvas';
+    // EITHER explicit indices (original form)...
+    supportIndex?: number;
+    targetPosition?: number; // Position on target element where load should be placed
+    // ...OR a shared coordinate: the support on the source element sitting at
+    // this coordinate resolves supportIndex, and its projection onto the
+    // target element's span resolves targetPosition.
+    atCoordinate?: Coordinate;
 } | {
     type: 'remove_load_transfer';
     targetElementName: string;
@@ -160,7 +165,38 @@ export type LoadTransferAction = {
     targetContext: 'chat' | 'canvas';
 };
 
-export type Action = FormAction | GlobalAction | UpdateAction | DownloadAction | ConfirmAttachmentAnalysisAction | CancelAttachmentAnalysisAction | FormManipulationAction | LoadTransferAction;
+/**
+ * Moves one end of an element to a new coordinate. Also covers "increase
+ * the span" requests, which are just the end point moving further away
+ * from the start point along the span axis.
+ *  axis - omitted defaults to the element's current span axis
+ *  delta - relative move; absolute - new coordinate value on that axis
+ */
+export type CoordinateAction = {
+    type: 'move_coordinate';
+    targetContext: 'chat' | 'canvas';
+    targetElementName: string;
+    point: 'start' | 'end';
+    axis?: 'x' | 'y' | 'z';
+    delta?: number;
+    absolute?: number;
+};
+
+/**
+ * Joins two elements at a shared coordinate - element B's point snaps to
+ * element A's point (or to atCoordinate, moving both, if given).
+ */
+export type JoinElementsAction = {
+    type: 'join_elements';
+    targetContext: 'chat' | 'canvas';
+    elementAName: string;
+    elementAPoint: 'start' | 'end';
+    elementBName: string;
+    elementBPoint: 'start' | 'end';
+    atCoordinate?: Coordinate;
+};
+
+export type Action = FormAction | GlobalAction | UpdateAction | DownloadAction | ConfirmAttachmentAnalysisAction | CancelAttachmentAnalysisAction | FormManipulationAction | LoadTransferAction | CoordinateAction | JoinElementsAction;
 //#endregion
 
 
@@ -279,23 +315,23 @@ export interface Project {
     city: string;
     state?: string;
     country: string;
-     
+
   };
-  
+
   // Project timeline
    createdAt: Timestamp | Date | FieldValue;
     updatedAt: Timestamp | Date | FieldValue;
   startDate?: Date;
   targetCompletionDate?: Date;
-  
+
   // Project ownership and team
   ownerId: string; // Firebase user ID of project owner
   projectMembers: User[];
-  
+
   // Structural engineering specifics
   //designCriteria: DesignCriteria;
   //soilConditions?: SoilConditions;
-  
+
   // Building information
   buildingInfo: {
     type: string; // residential, commercial, industrial, etc.
@@ -304,13 +340,13 @@ export interface Project {
     structuralSystem: string; // steel frame, concrete, wood, etc.
     foundationType: string; // spread footings, pile, mat, etc.
   };
-  
+
   // Structural elements collection
   elements: Element[];
-  
+
   // Element count for efficient querying (synced with subcollection count)
   elementCount?: number;
-  
+
   // File attachments and references
   attachments?: {
     id: string;
@@ -322,12 +358,12 @@ export interface Project {
   }[];
   /** Standard load definitions in kPa for floor, roof, and wall beams */
   standardLoads?: StandardLoads[];
-  
+
   // Project status and versioning
   status: 'draft' | 'in-progress' | 'under-review' | 'approved' | 'archived';
   version: string;
   isActive: boolean;
-  
+
   // Integration with conversation system
   conversationIds?: string[]; // Associated chat conversations
 }

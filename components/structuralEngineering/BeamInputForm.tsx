@@ -50,11 +50,11 @@ export const defaultBeamInput: BeamInput = {
         }
     };
 
-export const BeamInputForm: React.FC<BeamInputFormProps> = ({ 
+export const BeamInputForm: React.FC<BeamInputFormProps> = ({
   initialData,
-  onSubmit, 
+  onSubmit,
   onChange,
-  onCancel, 
+  onCancel,
   isFormActive = true,
   submitButtonText = "Analyze Beam",
 }) => {
@@ -82,12 +82,12 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
   // It updates its own state AND calls the parent's `onChange` if controlled.
   const handleDataChange = (newBeamData: BeamInput) => {
     // Enforce engineering rule: a single support must be fixed.
-    if (newBeamData.Supports.length === 1 && newBeamData.Supports[0].fixity !== SupportFixityType.Fixed) {
-        const newSupports = [...newBeamData.Supports];
+    if ((newBeamData.Supports?.length ?? 0) === 1 && newBeamData.Supports[0].fixity !== SupportFixityType.Fixed) {
+        const newSupports = [...(newBeamData.Supports || [])];
         newSupports[0] = { ...newSupports[0], fixity: SupportFixityType.Fixed };
         newBeamData = { ...newBeamData, Supports: newSupports };
     }
-    
+
     setEditedBeam(newBeamData); // Always update the internal edited state.
     if (isControlled) {
         onChange(newBeamData); // Propagate the change to the parent if controlled.
@@ -108,15 +108,15 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
       const newSpan = Number(value);
 
       // Update the position of the last support to match the new span.
-      if (newBeam.Supports.length > 0) {
-        const lastSupportIndex = newBeam.Supports.length - 1;
-        const newSupports = [...newBeam.Supports];
+      if ((newBeam.Supports?.length ?? 0) > 0) {
+        const lastSupportIndex = (newBeam.Supports?.length ?? 1) - 1;
+        const newSupports = [...(newBeam.Supports || [])];
         newSupports[lastSupportIndex] = { ...newSupports[lastSupportIndex], position: newSpan };
         newBeam.Supports = newSupports;
       }
 
       // Update the positions of the loads based on the new span.
-      newBeam.Loads = newBeam.Loads.map(load => {
+      newBeam.Loads = (newBeam.Loads || []).map(load => {
         const newLoad = { ...load };
         if (newLoad.type === LoadType.PointLoad) {
           // For point loads, center them on the new span.
@@ -130,10 +130,10 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
         return newLoad;
       });
     }
-    
+
     handleDataChange(newBeam);
   };
-  
+
 
   // Handles changes to individual support properties.
   const handleSupportChange = (index: number, e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -143,12 +143,12 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
     newSupports[index] = newSupport;
     handleDataChange({ ...editedBeam, Supports: newSupports });
   };
-  
+
   // Handles when the user changes the type of a load.
   const handleLoadTypeChange = (loadIndex: number, newType: LoadType) => {
     const newLoads = [...editedBeam.Loads];
     const currentLoad = { ...newLoads[loadIndex] };
-    
+
     currentLoad.type = newType;
 
     // Reset position and name to sensible defaults
@@ -172,7 +172,7 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
             currentLoad.magnitude = [currentLoad.magnitude[0]];
         }
     }
-    
+
     newLoads[loadIndex] = currentLoad;
     handleDataChange({ ...editedBeam, Loads: newLoads });
   };
@@ -215,7 +215,7 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
     // The 'editedBeam' state is already in the correct base units (N, m, Pa), so no conversion is needed here.
     onSubmit(editedBeam);
   };
-  
+
   // Wrapper for the onCancel prop, marks the form as cancelled.
   const handleCancel = () => {
     setWasCancelled(true);
@@ -278,7 +278,7 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
             <input id={`A-${formId}`} type="number" step="any" name="A" value={editedBeam.A} onChange={handleChange} className={inputClasses} />
         </div>
       </div>
-      
+
       {/* Supports Section */}
       <FormCollapsibleSectionWithStagedSummary
         title="Supports"
@@ -286,18 +286,18 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
         enableDoubleClickExpand={true}
         defaultStage="preview"
         summaryItems={[
-            { label: '', value: editedBeam.Supports.length+" No"  },
-            { label: 'Types', value: editedBeam.Supports, arrayDisplayType: 'list', arrayProperty: 'fixity', maxArrayItems: 2 },
-            { label: 'Positions', value: editedBeam.Supports, arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 2, unit: 'm' },
+            { label: '', value: (editedBeam.Supports?.length ?? 0)+" No"  },
+            { label: 'Types', value: editedBeam.Supports || [], arrayDisplayType: 'list', arrayProperty: 'fixity', maxArrayItems: 2 },
+            { label: 'Positions', value: editedBeam.Supports || [], arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 2, unit: 'm' },
 
         ]}
       >
         <div className="space-y-2">
-            {editedBeam.Supports.map((support, index) => (
+            {(editedBeam.Supports || []).map((support, index) => (
             <div key={index} className="p-3 bg-secondary border border-sky-200 rounded-lg grid grid-cols-[1fr_1fr_auto] gap-3 items-center">
                 <div>
                     <label htmlFor={`support-pos-${formId}-${index}`} className="block mb-1 text-xs font-medium text-gray-700">Position (m)</label>
-                    <input id={`support-pos-${formId}-${index}`} type="number" step="any" name="position" value={support.position} onChange={(e) => handleSupportChange(index, e)} className={inputClasses} />
+                    <input id={`support-pos-${formId}-${index}`} type="number" step="any" name="position" value={typeof support.position === 'number' ? support.position : support.position?.x ?? 0} onChange={(e) => handleSupportChange(index, e)} className={inputClasses} />
                 </div>
                 <div>
                     <label htmlFor={`support-fixity-${formId}-${index}`} className="block mb-1 text-xs font-medium text-gray-700">Fixity</label>
@@ -305,7 +305,7 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
                     {Object.values(SupportFixityType).map(fixity => <option key={fixity} value={fixity}>{fixity}</option>)}
                     </select>
                 </div>
-                <button type="button" onClick={() => removeSupport(index)} className="text-red-500 hover:text-red-700 disabled:opacity-50 self-end mb-1" disabled={editedBeam.Supports.length <= 1}>
+                <button type="button" onClick={() => removeSupport(index)} className="text-red-500 hover:text-red-700 disabled:opacity-50 self-end mb-1" disabled={(editedBeam.Supports?.length ?? 0) <= 1}>
                     <RemoveIcon className="w-6 h-6"/>
                 </button>
             </div>
@@ -315,7 +315,7 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
             <AddIcon className="w-5 h-5" /> Add Support
         </button>
       </FormCollapsibleSectionWithStagedSummary>
-      
+
       {/* Loads Section */}
       <FormCollapsibleSectionWithStagedSummary
         title="Loads"
@@ -323,15 +323,15 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
         enableDoubleClickExpand={true}
         defaultStage="preview"
         summaryItems={[
-            { label: '', value: editedBeam.Loads.length+" No" },
-            { label: 'Names', value: editedBeam.Loads, arrayDisplayType: 'list', arrayProperty: 'name', maxArrayItems: 3 },
-            { label: 'Types', value: editedBeam.Loads, arrayDisplayType: 'list', arrayProperty: 'type', maxArrayItems: 3 },
-            { label: 'Magnitudes', value: editedBeam.Loads.flatMap(load => (load.magnitude).map(m => m / 1000)), arrayDisplayType: 'list', maxArrayItems: 3 },
-            { label: 'Positions', value: editedBeam.Loads.flatMap(l => l.position.join(' to ')), arrayDisplayType: 'list', maxArrayItems: 2, unit: 'm' }
+            { label: '', value: (editedBeam.Loads?.length ?? 0)+" No" },
+            { label: 'Names', value: editedBeam.Loads || [], arrayDisplayType: 'list', arrayProperty: 'name', maxArrayItems: 3 },
+            { label: 'Types', value: editedBeam.Loads || [], arrayDisplayType: 'list', arrayProperty: 'type', maxArrayItems: 3 },
+            { label: 'Magnitudes', value: (editedBeam.Loads || []).flatMap(load => (load.magnitude).map(m => m / 1000)), arrayDisplayType: 'list', maxArrayItems: 3 },
+            { label: 'Positions', value: (editedBeam.Loads || []).flatMap(l => l.position.join(' to ')), arrayDisplayType: 'list', maxArrayItems: 2, unit: 'm' }
         ]}
       >
         <div className="space-y-3">
-            {editedBeam.Loads.map((load, index) => (
+            {(editedBeam.Loads || []).map((load, index) => (
                 <div key={index} className="p-3 bg-teal-50/60 border border-teal-200 rounded-lg space-y-3">
                     <div className="flex justify-between items-center">
                         <span className="font-semibold text-teal-800">{load.name}</span>
@@ -377,7 +377,7 @@ export const BeamInputForm: React.FC<BeamInputFormProps> = ({
             <AddIcon className="w-5 h-5" /> Add Load
         </button>
       </FormCollapsibleSectionWithStagedSummary>
-      
+
       {/* Action Buttons */}
       <div className="flex justify-end items-center gap-4">
         {hasChanges && (

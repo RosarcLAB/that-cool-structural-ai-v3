@@ -116,7 +116,7 @@ export const UserProfileModal: React.FC<UserProfileProps> = ({ isOpen, onClose  
     //     return <div className="text-center p-8">Please log in to view your profile.</div>;
     //   }
 
-  if (!isOpen) return null; 
+  if (!isOpen) return null;
 
 
   return (
@@ -146,14 +146,23 @@ export const UserProfileModal: React.FC<UserProfileProps> = ({ isOpen, onClose  
           <p className="text-gray-600">{formData.displayName || 'Complete your profile'}</p>
         </div>
         <div className="flex items-center space-x-2">
-          {!isEditing && (
-            <>            
+          {!isEditing ? (
+            <>
               <button onClick={loadUserProfile} disabled={loading}
                 className="btn btn-ghost btn-circle">
                 {loading ? <span className="loading loading-spinner" /> : '⟳'}
               </button>
               <button onClick={() => setIsEditing(true)} className="btn btn-primary">
                 Edit
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={handleCancel} disabled={saving} className="btn btn-ghost">
+                Cancel
+              </button>
+              <button onClick={handleSave} disabled={saving} className="btn btn-primary">
+                {saving ? <span className="loading loading-spinner" /> : 'Save'}
               </button>
             </>
           )}

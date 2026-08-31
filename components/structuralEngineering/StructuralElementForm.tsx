@@ -1,6 +1,6 @@
 // components/Engineering/StructuralElementForm.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Element, LoadType, SupportFixityType, LoadCaseType, LoadCombination, LoadCaseFactor, LoadCombinationUtils, Load, DesignParameters, DesignOutput  } from '../../customTypes/structuralElement';
+import { Element, LoadType, SupportFixityType, LoadCaseType, LoadCombination, LoadCaseFactor, LoadCombinationUtils, Load, DesignParameters, DesignOutput, Coordinate, getCoordinateValues  } from '../../customTypes/structuralElement';
 import { ELEMENT_TYPE_OPTIONS } from '../../customTypes/structuralElement';
 // Ensure ELEMENT_TYPE_OPTIONS is exported as a default array from structuralElement.ts
 import { AddIcon, RemoveIcon, SaveIcon } from '../utility/icons';
@@ -12,10 +12,10 @@ import { projectTransferRegistry } from '../../services/projectTransferRegistry'
 import { projectService } from '../../services/projectService';
 import { designAllCombinations } from '../../services/analysisService';
 import TextEditor, { TextEditorHandle } from '../utility/TextEditor';
- 
- 
- 
- 
+
+
+
+
 interface StatusMessage {
     type: 'loading' | 'success' | 'error' | 'info';
     message: string;
@@ -44,20 +44,20 @@ const labelClasses = "block text-sm font-medium text-gray-700 mb-1";
 
 const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     elementData, elementDataList, isFormActive, onSubmit, onCancel, onSave, onChange, sections, projectData, statusMessage, onPin, onAddTextEditorContent, onRegisterDownload }) => {
-    
+
     //#region Variables & Constants
     const [element, setElement] = useState<Element>(elementData);
     const [showResults, setShowResults] = useState<{[id: string]: boolean}>({});
     const [isSaved, setIsSaved] = useState<boolean>(elementData.isSaved || false);
-    
+
     // A component is "controlled" if an `onChange` prop is provided.
     const isControlled = onChange !== undefined;
-    
+
     // Track if this is the initial render to avoid calling onChange on mount
     const isInitialRender = useRef(true);
     const previousElementRef = useRef<Element>(elementData);
     const lastOnChangeElementRef = useRef<string>('');
-    
+
     // Helper function to update element state and notify parent if controlled
     const updateElement = (updater: (prev: Element) => Element) => {
         setElement(prev => {
@@ -65,12 +65,12 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             return newElement;
         });
     };
-    
+
     // Mark that initial render is complete after first useEffect
     useEffect(() => {
         isInitialRender.current = false;
     }, []);
-    
+
     // Handle onChange callback separately to avoid infinite loops
     useEffect(() => {
         if (!isInitialRender.current && isControlled && onChange) {
@@ -82,7 +82,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             }
         }
     }, [element, isControlled, onChange]);
-    
+
     // Sync with external elementData changes (without triggering onChange)
     useEffect(() => {
         // Deep compare the incoming prop with the current state to avoid loops.
@@ -91,7 +91,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             setElement(elementData);
         }
     }, [elementData]);
-    
+
     // State for the custom combobox
     const [sectionSearchText, setSectionSearchText] = useState(element?.sectionName || '');
     const [filteredSections, setFilteredSections] = useState<SectionProperties[]>([]);
@@ -102,15 +102,15 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const [newLoadSourceMode, setNewLoadSourceMode] = useState<'manual' | 'fromProjectReaction'>('manual');
     const [reactionSourceElementId, setReactionSourceElementId] = useState<string>('');
     const [reactionSourceSupportIndex, setReactionSourceSupportIndex] = useState<number | ''>('');
-    
-    // Helper to filter out reaction combinations from UI display  
+
+    // Helper to filter out reaction combinations from UI display
     const visibleLoadCombinations = element?.loadCombinations?.filter(
         combination => combination.combinationType !== 'Reaction'
     ) || [];
-    
+
     // Candidate source elements: saved elements in the same project (exclude self)
     const [fetchedCandidateElements, setFetchedCandidateElements] = useState<any[]>([]);
-    
+
     // Text Editor state
     const [textEditorContent, setTextEditorContent] = useState<any[]>(
         elementData.documentContent || [
@@ -132,7 +132,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
 
     //#region Effect Hooks
-    
+
     // Fetch project elements for transfer candidates
     useEffect(() => {
         let mounted = true;
@@ -155,27 +155,27 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     // Subscribe to any transfer groups referenced by this element so updates propagate
     useEffect(() => {
         if (!element?.appliedLoads) return;
-        
+
         const unsubscribers: Array<() => void> = [];
-        
+
         // Create a stable reference to the transfer group IDs to avoid re-subscribing unnecessarily
         const transferGroups = element.appliedLoads
             .map(load => (load as any).transfer)
             .filter(tg => tg && tg.transferGroupId && tg.projectId)
             .map(tg => ({ projectId: tg.projectId, transferGroupId: tg.transferGroupId }));
-        
+
         transferGroups.forEach(({ projectId, transferGroupId }) => {
             const unsub = projectTransferRegistry.subscribe(projectId, transferGroupId, (canonical) => {
                 updateElement(prev => {
                     const idx = prev.appliedLoads.findIndex(l => (l as any).transfer?.transferGroupId === canonical.transfer!.transferGroupId);
                     if (idx === -1) return prev;
-                    
+
                     // Only update if the data actually changed to prevent infinite loops
                     const currentLoad = prev.appliedLoads[idx];
                     if (JSON.stringify(currentLoad) === JSON.stringify(canonical)) {
                         return prev;
                     }
-                    
+
                     const copy = [...prev.appliedLoads];
                     copy[idx] = { ...(canonical as any) };
                     return { ...prev, appliedLoads: copy };
@@ -183,7 +183,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             });
             unsubscribers.push(unsub);
         });
-        
+
         return () => unsubscribers.forEach(u => u());
     }, [element?.id, element?.appliedLoads, updateElement]);
 
@@ -200,11 +200,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     }, [comboboxRef]);
 
 
-   
 
-    
 
-    
+
+
+
    // Effect to enforce engineering rules (e.g., a single support must be fixed).
     useEffect(() => {
        // If there's only one support, it must be a 'Fixed' support (cantilever).
@@ -224,18 +224,18 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             setElement(newElement);
         }
     }, [element?.appliedLoads, element?.loadCombinations, element]);
-    
+
     // Update local element state when parent passes new elementData (e.g., with design results)
     // Only sync specific properties to avoid overriding user changes
     useEffect(() => {
         setElement(prev => {
             // Create a new element with selective updates
             const updated = { ...prev };
-            
+
             // Always sync design results from parent (these come from API responses)
             if (elementData.designResults !== prev.designResults) {
                 updated.designResults = elementData.designResults;
-                
+
                 // Auto-populate text editor with analysis results when they're received
                 if (elementData.designResults && elementData.designResults.length > 0) {
                     const governingResult = elementData.designResults.reduce((max, current) => {
@@ -249,25 +249,25 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                         );
                         return currentUtil > maxUtil ? current : max;
                     });
-                    
+
                     const status = governingResult.capacity_data.status;
                     const bendingUtil = (governingResult.capacity_data.utilization.bending_strength * 100).toFixed(1);
                     const shearUtil = (governingResult.capacity_data.utilization.shear_strength * 100).toFixed(1);
-                    
+
                     const analysisText = `Design analysis completed for ${elementData.name || 'element'}. ` +
                         `Status: ${status}. ` +
                         `Governing combination: ${governingResult.combinationName || 'N/A'}. ` +
                         `Bending utilization: ${bendingUtil}%, Shear utilization: ${shearUtil}%. ` +
-                        (status === 'FAIL' ? 'Element requires attention - utilization exceeds limits.' : 
+                        (status === 'FAIL' ? 'Element requires attention - utilization exceeds limits.' :
                          status === 'PASS' ? 'Element is adequately designed.' : 'Review required.');
-                    
+
                     // Add to text editor after a brief delay to ensure state is updated
                     setTimeout(() => {
                         appendToTextEditor(analysisText, 'analysis-result');
                     }, 100);
                 }
             }
-            
+
             // Always sync saved state and IDs from parent
             if (elementData.id !== prev.id) {
                 updated.id = elementData.id;
@@ -278,17 +278,17 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             if (elementData.isSaved !== prev.isSaved) {
                 updated.isSaved = elementData.isSaved;
             }
-            
+
             // Only sync other properties if this is the initial load (when prev has default/empty values)
             // or if the parent data is significantly different (like from AI actions)
             const isInitialLoad = !prev.name || prev.name === elementData.name;
-            
+
             // Check for both length changes AND content changes (for AI edits that don't change array length)
             const hasAppliedLoadsChanges = elementData.appliedLoads && JSON.stringify(elementData.appliedLoads) !== JSON.stringify(prev.appliedLoads);
             const hasLoadCombinationsChanges = elementData.loadCombinations && JSON.stringify(elementData.loadCombinations) !== JSON.stringify(prev.loadCombinations);
             const hasSupportsChanges = elementData.supports && JSON.stringify(elementData.supports) !== JSON.stringify(prev.supports);
             const hasStructuralChanges = hasAppliedLoadsChanges || hasLoadCombinationsChanges || hasSupportsChanges;
-            
+
             if (isInitialLoad || hasStructuralChanges) {
                 // Sync structural properties from parent (AI changes, etc.)
                 if (hasAppliedLoadsChanges) {
@@ -300,7 +300,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 if (hasSupportsChanges) {
                     updated.supports = elementData.supports;
                 }
-                
+
                 // Sync basic properties only if significantly different
                 if (elementData.name && elementData.name !== prev.name) {
                     updated.name = elementData.name;
@@ -315,13 +315,13 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     updated.sectionName = elementData.sectionName;
                     updated.sections = elementData.sections || [];
                 }
-                
+
                 // Sync document content if it exists and is different
                 if (elementData.documentContent && JSON.stringify(elementData.documentContent) !== JSON.stringify(prev.documentContent)) {
                     updated.documentContent = elementData.documentContent;
                 }
             }
-            
+
             return updated;
         });
     }, [elementData]);
@@ -343,7 +343,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     // Auto-resolve section properties when sectionName exists but sections array is empty
     useEffect(() => {
         if (element?.sectionName && (!element?.sections || element.sections.length === 0)) {
-            const matchingSection = sections.find(s => 
+            const matchingSection = sections.find(s =>
                 s.name.toLowerCase() === element.sectionName.toLowerCase()
             );
             if (matchingSection) {
@@ -359,22 +359,22 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     // Auto-generate descriptions for loads that don't have them
     useEffect(() => {
         if (!element?.appliedLoads) return;
-        
-        const loadsNeedingDescriptions = element.appliedLoads.some(load => 
+
+        const loadsNeedingDescriptions = element.appliedLoads.some(load =>
             !load.description || load.description.trim() === ''
         );
-        
+
         if (loadsNeedingDescriptions) {
             const generateSmartDescription = (load: any, index: number) => {
                 if (load.description && load.description.trim() !== '') {
                     return load.description; // Keep existing description
                 }
-                
+
                 const elementType = element.type?.toLowerCase() || '';
                 const loadCases = load.forces?.map((f: any) => f.loadCase).join(' + ') || 'Load';
-                const typeStr = load.type === 'PointLoad' ? 'Point Load' : 
+                const typeStr = load.type === 'PointLoad' ? 'Point Load' :
                               load.type === 'UDL' ? 'UDL' : 'Load';
-                
+
                 if (elementType.includes('floor') || elementType.includes('joist')) {
                     return `Floor ${loadCases} ${typeStr}`;
                 } else if (elementType.includes('roof') || elementType.includes('rafter')) {
@@ -414,18 +414,18 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
         updateElement(prev => {
             let newElement = { ...prev, [name]: newValue };
-            
+
             // When span changes, update support positions and load positions
             if (name === 'span') {
                 const oldSpan = prev.span;
                 const newSpan = Number(value);
-                
+
                 // Update lateralRestraintSpacing to match new span
                 newElement.designParameters = {
                     ...(prev.designParameters as DesignParameters),
                     lateralRestraintSpacing: newSpan,
                 } as DesignParameters;
-                
+
                 // Update the position of the last support if it's a roller
                 const lastIdx = newElement.supports.length - 1;
                 if (lastIdx >= 0 && newElement.supports[lastIdx].fixity === SupportFixityType.Roller) {
@@ -433,11 +433,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     newSupports[lastIdx] = { ...newSupports[lastIdx], position: newSpan };
                     newElement.supports = newSupports;
                 }
-                
+
                 // Update load positions based on span change
                 newElement.appliedLoads = newElement.appliedLoads.map(load => {
                     const newLoad = { ...load };
-                    
+
                     if (load.type === LoadType.UDL || load.type === LoadType.TrapezoidalLoad) {
                         // For UDL and trapezoidal loads, update the end position to match new span
                         if (newLoad.position.length > 1) {
@@ -453,15 +453,15 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                             newLoad.position = [String(proportionalPosition)];
                         }
                     }
-                    
+
                     return newLoad;
                 });
             }
-            
+
             return newElement;
         });
     };
-    
+
     const handleSectionInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const searchText = e.target.value;
         setSectionSearchText(searchText);
@@ -517,17 +517,17 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const handleSubmit = async () => {
         // First, recompute all load combinations with current applied loads to ensure freshest data
         const updatedElement = recomputeAllLoadCombinations(element);
-        
+
         // Update local state with the recomputed element
         setElement(updatedElement);
-        
+
         // Reset isSaved to false so button shows "Save" instead of "Update" after design
         setIsSaved(false);
-        
+
         // Send the updated element with fresh load combinations to parent for API call
         onSubmit(updatedElement);
     };
-    
+
     /**
      * This function handles the form saving.
      */
@@ -539,16 +539,16 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 documentContent: textEditorContent,
                 documentPlainText: getDocumentPlainText()
             };
-            
+
             // Perform save via parent
             await onSave(elementWithDocument);
-            
+
             // Re-fetch from backend to include any reaction data
             if (element.projectId && element.id) {
                 try {
                     const fresh = await projectService.getElement(element.projectId, element.id);
                     setElement(fresh);
-                    
+
                     // If the fresh element has document content, update the text editor
                     if (fresh.documentContent) {
                         setTextEditorContent(fresh.documentContent);
@@ -592,7 +592,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const handleSupportCoordinateChange = (index: number, axis: 'x' | 'y' | 'z', value: string) => {
         const newSupports = [...element.supports];
         const currentPos = newSupports[index].position;
-        
+
         // Convert current position to Coordinate if it's a number
         let coordPos: import('../../customTypes/structuralElement').Coordinate;
         if (typeof currentPos === 'number') {
@@ -600,7 +600,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         } else {
             coordPos = { ...currentPos };
         }
-        
+
         // Update the specific axis
         const numValue = parseFloat(value);
         if (axis === 'x') {
@@ -610,21 +610,33 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         } else if (axis === 'z') {
             coordPos.z = isNaN(numValue) || numValue === 0 ? undefined : numValue;
         }
-        
+
         // If y and z are both undefined, convert back to simple number
         if (coordPos.y === undefined && coordPos.z === undefined) {
             newSupports[index] = { ...newSupports[index], position: coordPos.x };
         } else {
             newSupports[index] = { ...newSupports[index], position: coordPos };
         }
-        
+
         updateElement(prev => ({ ...prev, supports: newSupports }));
     };
 
+    /**
+     * Handles changes to the element's own start/end position fields (X, Y, Z).
+     * Distinct from handleSupportCoordinateChange, which edits a support's
+     * position local to the element's span.
+     */
+    const handleElementPointChange = (point: 'startPoint' | 'endPoint', axis: 'x' | 'y' | 'z', value: string) => {
+        const current: Coordinate = element[point] ?? { x: 0, y: 0, z: 0 };
+        const numValue = parseFloat(value);
+        const updated: Coordinate = { ...current, [axis]: isNaN(numValue) ? 0 : numValue };
+        updateElement(prev => ({ ...prev, [point]: updated }));
+    };
+
     const addSupport = () => updateElement(prev => ({...prev, supports: [...prev.supports, { position: prev.span, fixity: SupportFixityType.Roller }]}));
-    
+
     const removeSupport = (index: number) => updateElement(prev => ({...prev, supports: prev.supports.filter((_, i) => i !== index)}));
-   
+
     //#endregion
 
 
@@ -641,11 +653,11 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
      */
     const handleProjectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const selectedProjectId = e.target.value;
-        
+
         // Clear project-specific state immediately to prevent conflicts
         setReactionSourceElementId('');
         setFetchedCandidateElements([]);
-        
+
         // Use updateElement which will notify parent via onChange about project changes
         updateElement(prev => ({
             ...prev,
@@ -671,16 +683,16 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         updateElement(prev => {
             const newAppliedLoads = [...prev.appliedLoads];
             const currentLoad = { ...newAppliedLoads[loadIndex] };
-            
+
             currentLoad.type = newType;
-    
+
             // Reset position to sensible defaults
             if (newType === LoadType.PointLoad) {
                 currentLoad.position = [String(element.span / 2)];
             } else { // For UDL and Trapezoidal
                 currentLoad.position = ['0', String(element.span)];
             }
-    
+
             // Adjust forces array based on new type
              currentLoad.forces = currentLoad.forces.map(force => {
                 let newMag = [...force.magnitude];
@@ -691,7 +703,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 }
                 return {...force, magnitude: newMag};
             });
-            
+
             newAppliedLoads[loadIndex] = currentLoad;
             const updated = { ...prev, appliedLoads: newAppliedLoads };
             const updatedElement = recomputeAllLoadCombinations(updated);
@@ -758,7 +770,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             return { ...prev, appliedLoads: newLoads };
         });
       };
-    
+
       // Handles changes to the position of a load.
     const handleLoadPositionChange = (loadIndex: number, posIndex: number, value: string) => {
         updateElement(prev => {
@@ -769,13 +781,13 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             return { ...prev, appliedLoads: newLoads };
         });
     };
-    
+
     const addAppliedLoad = () => {
         // Generate smart load description based on element type and context
         const generateLoadDescription = () => {
             const elementType = element.type?.toLowerCase() || '';
             const loadCount = element.appliedLoads.length + 1;
-            
+
             if (elementType.includes('floor') || elementType.includes('joist')) {
                 return 'Floor Dead + Live Load';
             } else if (elementType.includes('roof') || elementType.includes('rafter')) {
@@ -810,7 +822,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             appliedLoads: prev.appliedLoads.filter((_, i) => i !== index)
         }));
     };
-    
+
     const addForceToLoad = (loadIndex: number) => {
         updateElement(prev => {
             const newLoads = [...prev.appliedLoads];
@@ -919,7 +931,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             return currentElement;
         }
         const updatedCombinations = currentElement.loadCombinations.map(combo => ({
-            ...combo, 
+            ...combo,
             computedResult: (() => {
                 if (!combo.loadCaseFactors || combo.loadCaseFactors.length === 0) {
                     return undefined;
@@ -942,7 +954,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
 
 
-    //#region Validation & Helper function 
+    //#region Validation & Helper function
 
     /** Helper function to append AI-generated content to the text editor
     * @param content The text content to append
@@ -958,14 +970,14 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 { text: content }
             ]
         };
-        
+
         setTextEditorContent(prev => [...prev, newBlock]);
     };
 
     // Expose appendToTextEditor to parent component
     useEffect(() => {
         if (onAddTextEditorContent) {
-            // This is a bit of a hack to expose the function to parent - 
+            // This is a bit of a hack to expose the function to parent -
             // in a real implementation you might want to use useImperativeHandle or a ref
             (onAddTextEditorContent as any).current = appendToTextEditor;
         }
@@ -985,7 +997,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     * @returns Plain text string representation of the document
     */
     const getDocumentPlainText = (): string => {
-        return textEditorContent.map(block => 
+        return textEditorContent.map(block =>
             block.children.map((child: any) => child.text).join('')
         ).join('\n');
     };
@@ -1133,7 +1145,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             ]}>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
                     <div><label className={labelClasses}>Name</label><input name="name" value={element.name} onChange={handleChange} className={inputClasses} /></div>
-                    
+
                     <div><label className={labelClasses}>Type</label><select name="type" value={element.type} onChange={handleChange} className={inputClasses}>{Object.values(ELEMENT_TYPE_OPTIONS).map(o => <option key={o} value={o}>{o}</option>)}</select></div>
                     <div><label className={labelClasses}>Span (m)</label><input name="span" type="number" step="any" value={element.span} onChange={handleChange} className={inputClasses} /></div>
                     <div>
@@ -1207,39 +1219,92 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                 </div>
             </FormCollapsibleSectionWithStagedSummary>
 
+            {/* Location Section - the element's absolute position in project space */}
+            <FormCollapsibleSectionWithStagedSummary title="Location" defaultStage="preview" color="bg-emerald-50/50"
+                summaryItems={[
+                    {label: "Start", value: element.startPoint ? getCoordinateValues(element.startPoint).join(', ') : 'Not set'},
+                    {label: "End", value: element.endPoint ? getCoordinateValues(element.endPoint).join(', ') : 'Not set'},
+                ]}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {(['startPoint', 'endPoint'] as const).map((point) => {
+                        const [xValue, yValue, zValue] = getCoordinateValues(element[point] ?? { x: 0, y: 0, z: 0 });
+                        return (
+                            <div key={point} className="space-y-2">
+                                <label className={labelClasses}>{point === 'startPoint' ? 'Start' : 'End'} Coordinates (m)</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label className="text-xs text-gray-600 mb-1 block">X</label>
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            value={xValue}
+                                            onChange={(e) => handleElementPointChange(point, 'x', e.target.value)}
+                                            className={inputClasses}
+                                            placeholder="0.0"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-600 mb-1 block">Y</label>
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            value={yValue}
+                                            onChange={(e) => handleElementPointChange(point, 'y', e.target.value)}
+                                            className={inputClasses}
+                                            placeholder="0.0"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-gray-600 mb-1 block">Z</label>
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            value={zValue}
+                                            onChange={(e) => handleElementPointChange(point, 'z', e.target.value)}
+                                            className={inputClasses}
+                                            placeholder="0.0"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </FormCollapsibleSectionWithStagedSummary>
+
             {/* Element Data - Wraps all detailed form sections */}
-            <FormCollapsibleSectionWithStagedSummary 
-                title="Element Input Data" 
+            <FormCollapsibleSectionWithStagedSummary
+                title="Element Input Data"
                 defaultStage="preview"
                 color="bg-slate-50/50"
                 summaryItems={[
-                    { 
-                        label: 'Design Params', 
-                        value: `${element.designParameters?.materialType || 'Timber'} | ${element.designParameters?.countryOfStandard || 'NZ'} | ${element.designParameters?.lateralRestraintSpacing || '1'}m` 
+                    {
+                        label: 'Design Params',
+                        value: `${element.designParameters?.materialType || 'Timber'} | ${element.designParameters?.countryOfStandard || 'NZ'} | ${element.designParameters?.lateralRestraintSpacing || '1'}m`
                     },
-                    { 
-                        label: 'Sections', 
-                        value: element.sections || [], 
-                        arrayDisplayType: 'count' 
+                    {
+                        label: 'Sections',
+                        value: element.sections || [],
+                        arrayDisplayType: 'count'
                     },
-                    { 
-                        label: 'Supports', 
-                        value: element.supports.length + ' supports | ' + element.supports.map(s => s.fixity).join(', ').substring(0, 20) + (element.supports.map(s => s.fixity).join(', ').length > 20 ? '...' : '')
+                    {
+                        label: 'Supports',
+                        value: (element.supports?.length ?? 0) + ' supports | ' + (element.supports || []).map(s => s.fixity).join(', ').substring(0, 20) + ((element.supports || []).map(s => s.fixity).join(', ').length > 20 ? '...' : '')
                     },
-                    { 
-                        label: 'Loads', 
-                        value: element.appliedLoads.length + ' loads | ' + element.appliedLoads.map(l => l.type).join(', ').substring(0, 15) + (element.appliedLoads.map(l => l.type).join(', ').length > 15 ? '...' : '')
+                    {
+                        label: 'Loads',
+                        value: (element.appliedLoads?.length ?? 0) + ' loads | ' + (element.appliedLoads || []).map(l => l.type).join(', ').substring(0, 15) + ((element.appliedLoads || []).map(l => l.type).join(', ').length > 15 ? '...' : '')
                     },
-                    { 
-                        label: 'Combinations', 
+                    {
+                        label: 'Combinations',
                         value: visibleLoadCombinations.length + ' combos | ' + visibleLoadCombinations.map(c => c.combinationType).join(', ').substring(0, 15) + (visibleLoadCombinations.map(c => c.combinationType).join(', ').length > 15 ? '...' : '')
                     }
                 ]}
             >
 
             {/* Design Parameters Section */}
-            <FormCollapsibleSectionWithStagedSummary 
-                title="Design Parameters" 
+            <FormCollapsibleSectionWithStagedSummary
+                title="Design Parameters"
                 defaultStage="preview"
                 color="bg-yellow-50/50"
                 summaryItems={[
@@ -1402,9 +1467,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             </FormCollapsibleSectionWithStagedSummary>
 
             {/* Section Properties Section */}
-            <FormCollapsibleSectionWithStagedSummary 
-                title="Section Properties" 
-                color="bg-purple-50/50" 
+            <FormCollapsibleSectionWithStagedSummary
+                title="Section Properties"
+                color="bg-purple-50/50"
                 defaultStage="preview"
                 summaryItems={[
                     { label: '', value: element.section_count+" No" },
@@ -1492,110 +1557,110 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Yield Strength (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.yield_strength || 0}
-                                            onChange={e => updateField('yield_strength', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('yield_strength', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Ultimate Strength (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.ultimate_strength || 0}
-                                            onChange={e => updateField('ultimate_strength', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('ultimate_strength', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Mass per Metre (kg/m)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.mass_per_metre || 0}
-                                            onChange={e => updateField('mass_per_metre', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('mass_per_metre', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Bending Parallel to Grain (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Bending_Parallel_to_Grain || 0}
-                                            onChange={e => updateField('Bending_Parallel_to_Grain', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('Bending_Parallel_to_Grain', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Tension Parallel to Grain (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Tension_parallel_to_Grain || 0}
-                                            onChange={e => updateField('Tension_parallel_to_Grain', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('Tension_parallel_to_Grain', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Compression Parallel to Grain (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Compression_parallel_to_Grain || 0}
-                                            onChange={e => updateField('Compression_parallel_to_Grain', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('Compression_parallel_to_Grain', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Shear Parallel to Grain (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Shear_Parallel_to_Grain || 0}
-                                            onChange={e => updateField('Shear_Parallel_to_Grain', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('Shear_Parallel_to_Grain', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Compression Perp. to Grain (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.compressopn_perpendicular_to_grain || 0}
-                                            onChange={e => updateField('compressopn_perpendicular_to_grain', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('compressopn_perpendicular_to_grain', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Bearing Strength Perp. (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Bearing_strength_perpendicular_to_grain || 0}
-                                            onChange={e => updateField('Bearing_strength_perpendicular_to_grain', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('Bearing_strength_perpendicular_to_grain', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Tension Perp. to Grain (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Tension_perpendicular_to_grain || 0}
-                                            onChange={e => updateField('Tension_perpendicular_to_grain', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('Tension_perpendicular_to_grain', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Elastic Mod Short-Term (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.elastic_modulus_Short_term || 0}
-                                            onChange={e => updateField('elastic_modulus_Short_term', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('elastic_modulus_Short_term', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Elastic Mod Lower Bound (MPa)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.elastic_modulus_Short_term_Lower_bound || 0}
-                                            onChange={e => updateField('elastic_modulus_Short_term_Lower_bound', Number(e.target.value))} 
-                                            className={inputClasses} 
+                                            onChange={e => updateField('elastic_modulus_Short_term_Lower_bound', Number(e.target.value))}
+                                            className={inputClasses}
                                         />
                                     </div>
                                 </div>
@@ -1605,181 +1670,181 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className={labelClasses}>Depth d (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.d}
-                                            onChange={e => updateField('d', Number(e.target.value))} 
+                                            onChange={e => updateField('d', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Width b (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.b}
-                                            onChange={e => updateField('b', Number(e.target.value))} 
+                                            onChange={e => updateField('b', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Wall Thickness t (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.t || 0}
-                                            onChange={e => updateField('t', Number(e.target.value))} 
+                                            onChange={e => updateField('t', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Web Thickness (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.web_thickness || 0}
-                                            onChange={e => updateField('web_thickness', Number(e.target.value))} 
+                                            onChange={e => updateField('web_thickness', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Flange Thickness (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.flange_thickness || 0}
-                                            onChange={e => updateField('flange_thickness', Number(e.target.value))} 
+                                            onChange={e => updateField('flange_thickness', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Ix (mm⁴)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Ix}
-                                            onChange={e => updateField('Ix', Number(e.target.value))} 
+                                            onChange={e => updateField('Ix', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Iy (mm⁴)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Iy}
-                                            onChange={e => updateField('Iy', Number(e.target.value))} 
+                                            onChange={e => updateField('Iy', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Zx (mm³)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Zx}
-                                            onChange={e => updateField('Zx', Number(e.target.value))} 
+                                            onChange={e => updateField('Zx', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Zy (mm³)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Zy}
-                                            onChange={e => updateField('Zy', Number(e.target.value))} 
+                                            onChange={e => updateField('Zy', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>A (mm²)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.A}
-                                            onChange={e => updateField('A', Number(e.target.value))} 
+                                            onChange={e => updateField('A', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>J (mm⁴)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.J || 0}
-                                            onChange={e => updateField('J', Number(e.target.value))} 
+                                            onChange={e => updateField('J', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Sx (mm³)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Sx || 0}
-                                            onChange={e => updateField('Sx', Number(e.target.value))} 
+                                            onChange={e => updateField('Sx', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Sy (mm³)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Sy || 0}
-                                            onChange={e => updateField('Sy', Number(e.target.value))} 
+                                            onChange={e => updateField('Sy', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>H (mm⁶)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.H || 0}
-                                            onChange={e => updateField('H', Number(e.target.value))} 
+                                            onChange={e => updateField('H', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>x (mm³)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.x || 0}
-                                            onChange={e => updateField('x', Number(e.target.value))} 
+                                            onChange={e => updateField('x', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>r (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.r || 0}
-                                            onChange={e => updateField('r', Number(e.target.value))} 
+                                            onChange={e => updateField('r', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>d1 (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.d1 || 0}
-                                            onChange={e => updateField('d1', Number(e.target.value))} 
+                                            onChange={e => updateField('d1', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>Cw (mm⁶)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.Cw || 0}
-                                            onChange={e => updateField('Cw', Number(e.target.value))} 
+                                            onChange={e => updateField('Cw', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>rx (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.rx || 0}
-                                            onChange={e => updateField('rx', Number(e.target.value))} 
+                                            onChange={e => updateField('rx', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
                                     <div>
                                         <label className={labelClasses}>ry (mm)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={section.ry || 0}
-                                            onChange={e => updateField('ry', Number(e.target.value))} 
+                                            onChange={e => updateField('ry', Number(e.target.value))}
                                             className={inputClasses}
                                         />
                                     </div>
@@ -1793,19 +1858,19 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             </FormCollapsibleSectionWithStagedSummary>
 
             {/* Supports Section */}
-            <FormCollapsibleSectionWithStagedSummary title="Supports" defaultStage="preview" color="bg-sky-50/50" 
+            <FormCollapsibleSectionWithStagedSummary title="Supports" defaultStage="preview" color="bg-sky-50/50"
                 summaryItems={[
-                {label: "", value: element.supports.length+" No"},
-                {label: "Types", value: element.supports, arrayDisplayType: 'list', arrayProperty: 'fixity', maxArrayItems: 3},
-                {label: 'Positions', value: element.supports, arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 3, unit: 'm' }
+                {label: "", value: (element.supports?.length ?? 0)+" No"},
+                {label: "Types", value: element.supports || [], arrayDisplayType: 'list', arrayProperty: 'fixity', maxArrayItems: 3},
+                {label: 'Positions', value: element.supports || [], arrayDisplayType: 'list', arrayProperty: 'position', maxArrayItems: 3, unit: 'm' }
 
             ]}>
-                {element.supports.map((support, index) => {
+                {(element.supports || []).map((support, index) => {
                     const currentPos = support.position;
                     const xValue = typeof currentPos === 'number' ? currentPos : currentPos.x;
                     const yValue = typeof currentPos === 'number' ? 0 : (currentPos.y || 0);
                     const zValue = typeof currentPos === 'number' ? 0 : (currentPos.z || 0);
-                    
+
                     return (
                     <div key={index} className="p-3 bg-secondary border border-sky-200 rounded-lg mb-2">
                         <div className="grid grid-cols-[2fr_1fr_auto] gap-3 items-start">
@@ -1815,33 +1880,33 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                 <div className="grid grid-cols-3 gap-2">
                                     <div>
                                         <label className="text-xs text-gray-600 mb-1 block">X (along span) *</label>
-                                        <input 
-                                            type="number" 
-                                            step="any" 
-                                            value={xValue} 
-                                            onChange={(e) => handleSupportCoordinateChange(index, 'x', e.target.value)} 
-                                            className={`${inputClasses} ${isSupportPositionInvalid(support.position) || (element.supports.filter(sup => getSupportPositionValue(sup.position) === getSupportPositionValue(support.position)).length > 1) ? 'border-red-500' : ''}`} 
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            value={xValue}
+                                            onChange={(e) => handleSupportCoordinateChange(index, 'x', e.target.value)}
+                                            className={`${inputClasses} ${isSupportPositionInvalid(support.position) || (element.supports.filter(sup => getSupportPositionValue(sup.position) === getSupportPositionValue(support.position)).length > 1) ? 'border-red-500' : ''}`}
                                             placeholder="0.0"
                                         />
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-600 mb-1 block">Y (perpendicular)</label>
-                                        <input 
-                                            type="number" 
-                                            step="any" 
-                                            value={yValue} 
-                                            onChange={(e) => handleSupportCoordinateChange(index, 'y', e.target.value)} 
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            value={yValue}
+                                            onChange={(e) => handleSupportCoordinateChange(index, 'y', e.target.value)}
                                             className={inputClasses}
                                             placeholder="0.0"
                                         />
                                     </div>
                                     <div>
                                         <label className="text-xs text-gray-600 mb-1 block">Z (perpendicular)</label>
-                                        <input 
-                                            type="number" 
-                                            step="any" 
-                                            value={zValue} 
-                                            onChange={(e) => handleSupportCoordinateChange(index, 'z', e.target.value)} 
+                                        <input
+                                            type="number"
+                                            step="any"
+                                            value={zValue}
+                                            onChange={(e) => handleSupportCoordinateChange(index, 'z', e.target.value)}
                                             className={inputClasses}
                                             placeholder="0.0"
                                         />
@@ -1850,7 +1915,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                 {isSupportPositionInvalid(support.position) && <p className="text-xs text-red-500 mt-1">Position ({formatSupportPosition(support.position)}) &gt; Span ({element.span})</p>}
                                 {(element.supports.filter(sup => getSupportPositionValue(sup.position) === getSupportPositionValue(support.position)).length > 1) && <p className="text-xs text-red-500 mt-1">Duplicate support position</p>}
                             </div>
-                            
+
                             {/* Fixity */}
                             <div>
                                 <label className={labelClasses}>Fixity</label>
@@ -1858,13 +1923,13 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                     {Object.values(SupportFixityType).map(f => <option key={f} value={f}>{f}</option>)}
                                 </select>
                             </div>
-                            
+
                             {/* Remove Button */}
-                            <button 
-                                type="button" 
-                                onClick={() => removeSupport(index)} 
-                                className="text-red-500 hover:text-red-700 disabled:opacity-50 self-end" 
-                                disabled={element.supports.length === 1}
+                            <button
+                                type="button"
+                                onClick={() => removeSupport(index)}
+                                className="text-red-500 hover:text-red-700 disabled:opacity-50 self-end"
+                                disabled={(element.supports?.length ?? 0) === 1}
                                 title="Remove support"
                             >
                                 <RemoveIcon className="w-6 h-6"/>
@@ -1882,13 +1947,13 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             {/* Applied Loads Section */}
             <FormCollapsibleSectionWithStagedSummary title="Applied Loads" color="bg-teal-50/50" enableDoubleClickExpand={true} defaultStage="preview"
                 summaryItems={[
-                    { label: '', value: element.appliedLoads.length+" No", arrayDisplayType: 'count' },
-                    { label: 'Types', value: element.appliedLoads, arrayDisplayType: 'list', arrayProperty: 'type', maxArrayItems: 3 },
-                    { label: 'Load Cases', value: element.appliedLoads.flatMap(load => load.forces.map(f => f.loadCase)), arrayDisplayType: 'list', maxArrayItems: 3 },
-                    { label: 'Magnitudes', value: element.appliedLoads.flatMap(load => load.forces.map(f => formatMagnitudeWithUnit(f.magnitude, load.type))), arrayDisplayType: 'list', maxArrayItems: 3 }
+                    { label: '', value: (element.appliedLoads?.length ?? 0)+" No", arrayDisplayType: 'count' },
+                    { label: 'Types', value: element.appliedLoads || [], arrayDisplayType: 'list', arrayProperty: 'type', maxArrayItems: 3 },
+                    { label: 'Load Cases', value: (element.appliedLoads || []).flatMap(load => load.forces.map(f => f.loadCase)), arrayDisplayType: 'list', maxArrayItems: 3 },
+                    { label: 'Magnitudes', value: (element.appliedLoads || []).flatMap(load => load.forces.map(f => formatMagnitudeWithUnit(f.magnitude, load.type))), arrayDisplayType: 'list', maxArrayItems: 3 }
                 ]}>
                  <div className="space-y-3">
-                    {element.appliedLoads.map((load, loadIndex) => (
+                    {(element.appliedLoads || []).map((load, loadIndex) => (
                         <FormCollapsibleSectionWithStagedSummary
                             key={loadIndex}
                             title={load.description || `Applied Load ${loadIndex + 1}`}
@@ -1917,12 +1982,12 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                             {Object.values(LoadType).map(t => <option key={t} value={t}>{t}</option>)}
                                         </select>
                                     </div>
-                                    <button type="button" onClick={() => removeAppliedLoad(loadIndex)} className="text-red-500 hover:text-red-700 mt-1" disabled={element.appliedLoads.length <= 1}>
+                                    <button type="button" onClick={() => removeAppliedLoad(loadIndex)} className="text-red-500 hover:text-red-700 mt-1" disabled={(element.appliedLoads?.length ?? 0) <= 1}>
                                         <RemoveIcon className="w-5 h-5"/>
                                     </button>
                                 </div>
-                                
-                                
+
+
                                 {/* Load Position */}
                                 <div>
                                     <label className={labelClasses}>Position (m)</label>
@@ -1961,7 +2026,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                                         <input type="number" step="any" value={force.magnitude[0] / 1000} onChange={(e) => handleLoadMagnitudeChange(loadIndex, forceIndex, 0, e.target.value)} className={inputClasses}/>
                                                     </div>
                                                 )}
-                                                
+
                                                 {/* Load Case */}
                                                 <div>
                                                     <label className={labelClasses}>Load Case</label>
@@ -1979,7 +2044,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                     })}
                                     <button type="button" onClick={() => addForceToLoad(loadIndex)} className="w-full text-xs text-center p-1 border-dashed border-2 rounded text-teal-800 hover:bg-teal-100">+ Add Force</button>
                                 </div>
-                                
+
                                 {/* Combination Results Display */}
                                 {visibleLoadCombinations && visibleLoadCombinations.length > 0 && (
                                     <div className="mt-3 p-2 bg-yellow-50/30 rounded border">
@@ -2067,7 +2132,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             <FormCollapsibleSectionWithStagedSummary
                 title="Load Combinations"
                 defaultStage="preview"
-                enableDoubleClickExpand={true}  
+                enableDoubleClickExpand={true}
                 color="bg-violet-50/50"
                 summaryItems={loadCombinationsSummaryItems}
             >
@@ -2085,9 +2150,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                     { label: 'Factors', value: combo.loadCaseFactors || [], arrayDisplayType: 'count' },
                                     { label: 'Cases', value: combo.loadCaseFactors || [], arrayDisplayType: 'list', arrayProperty: 'loadCaseType', maxArrayItems: 2 },
                                     { label: 'Factors', value: combo.loadCaseFactors?.map(f => f.factor) || [], arrayDisplayType: 'list', maxArrayItems: 3 },
-                                    { 
-                                        label: 'Results', 
-                                        value: combo.computedResult?.length > 0 
+                                    {
+                                        label: 'Results',
+                                        value: combo.computedResult?.length > 0
                                             ? combo.computedResult.map(r => formatMagnitudeWithUnit(r.magnitude, r.type as LoadType))
                                             : ['N/A'],
                                         arrayDisplayType: 'list'
@@ -2103,7 +2168,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                         placeholder="Combination Name"
                                         className={inputClasses}
                                     />
-                                     
+
                                     <select
                                         name="combinationType"
                                         value={combo.combinationType || 'Ultimate'}
@@ -2170,7 +2235,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                                 >
                                     {showResults[combo.id || `combo-${idx}`] ? 'Hide' : 'Show'} Computed Results
                                 </button>
-                                
+
                                 {showResults[combo.id || `combo-${idx}`] && combo.computedResult && combo.computedResult.length > 0 && !combo.computedResult.every(load => load.magnitude.length === 0 || load.magnitude.every(mag => mag === 0)) && (
                                     <div className="mt-2 p-3 bg-violet-50/40 rounded border text-sm space-y-2">
                                         <div className="font-semibold text-violet-700 mb-2">Load Combination Results</div>
@@ -2207,33 +2272,33 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
 
             {/* Design Results Display */}
             {element.designResults && element.designResults.length > 0 && (
-                <DesignResultsDisplay 
-                    results={element.designResults} 
-                    isVisible={true} 
+                <DesignResultsDisplay
+                    results={element.designResults}
+                    isVisible={true}
                 />
             )}
 
             {/* Document View */}
-            <FormCollapsibleSectionWithStagedSummary 
-                title="Document View" 
-                color="bg-amber-50/50" 
+            <FormCollapsibleSectionWithStagedSummary
+                title="Document View"
+                color="bg-amber-50/50"
                 defaultStage="preview"
                 summaryItems={[
-                    { 
-                        label: 'Content', 
-                        value: textEditorContent.map(block => 
+                    {
+                        label: 'Content',
+                        value: textEditorContent.map(block =>
                             block.children.map((child: any) => child.text).join('')
                         ).join(' ').substring(0, 100) + (
-                            textEditorContent.map(block => 
+                            textEditorContent.map(block =>
                                 block.children.map((child: any) => child.text).join('')
                             ).join(' ').length > 100 ? '...' : ''
                         )
                     },
-                    { 
-                        label: 'Word Count', 
-                        value: textEditorContent.map(block => 
+                    {
+                        label: 'Word Count',
+                        value: textEditorContent.map(block =>
                             block.children.map((child: any) => child.text).join('')
-                        ).join(' ').split(' ').filter(word => word.length > 0).length 
+                        ).join(' ').split(' ').filter(word => word.length > 0).length
                     }
                 ]}
             >
@@ -2287,22 +2352,22 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             {/* Action Buttons Section*/}
             <div className="flex justify-end items-center gap-4 pt-4 border-t">
                 {onCancel && <button type="button" onClick={handleCancel} className="px-5 py-2.5 bg-gray-200 text-neutral font-semibold rounded-lg hover:bg-gray-300 transition-colors">Cancel</button>}
-                <button 
-                    type="button" 
-                    onClick={handleSave} 
-                    disabled={statusMessage?.type === 'loading'} 
+                <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={statusMessage?.type === 'loading'}
                     className={`flex items-center gap-2 px-5 py-2.5 font-semibold rounded-lg transition-colors disabled:bg-gray-400 ${
                         hasUnsavedDocumentChanges || !isSaved
                         ? 'bg-orange-600 hover:bg-orange-700 text-white' // Unsaved changes
                         : 'bg-blue-600 hover:bg-blue-700 text-white' // No changes
                     }`}
                 >
-                    <SaveIcon className="w-5 h-5"/> 
+                    <SaveIcon className="w-5 h-5"/>
                     {hasUnsavedDocumentChanges ? 'Save Document' : (isSaved ? 'Update' : 'Save')}
                 </button>
-                <button 
-                    type="button" 
-                    onClick={handleSubmit} 
+                <button
+                    type="button"
+                    onClick={handleSubmit}
                     className={`px-5 py-2.5 font-semibold rounded-lg transition-colors ${
                         !element.designResults || element.designResults.length === 0
                         ? 'bg-white text-gray-800 border border-gray-300 hover:bg-gray-100' // Default state
@@ -2314,8 +2379,8 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
                     Design Element
                 </button>
             </div>
-            
-           
+
+
             <style>{`
                 .btn-icon {
                     padding: 0.25rem;
@@ -2343,7 +2408,7 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
             `}</style>
         </div>
     );
-    //#endregion  
+    //#endregion
 };
 
 export default StructuralElementForm;
