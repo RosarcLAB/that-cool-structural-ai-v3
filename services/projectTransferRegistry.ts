@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
 import { LoadType, LoadCaseType } from '../customTypes/structuralElement';
 
 export type TransferMeta = {
@@ -94,16 +93,16 @@ class ProjectTransferRegistry {
     else if (sourceEl.reactions && Object.keys(sourceEl.reactions).length > 0) {
       // Find reactions for this support position
       const supportPosition = support.position;
-      const reactionEntry = Object.entries(sourceEl.reactions).find(([pos]) => 
+      const reactionEntry = Object.entries(sourceEl.reactions).find(([pos]) =>
         Math.abs(parseFloat(pos) - supportPosition) < 0.001
       );
-      
+
       if (reactionEntry) {
         const [position, forces] = reactionEntry;
-        
+
         // Handle different possible structures
         let fx = 0, fy = 0, mz = 0;
-        
+
         if (Array.isArray(forces) && forces.length >= 3) {
           [fx, fy, mz] = forces as number[];
         } else if (typeof forces === 'object' && forces !== null) {
@@ -111,7 +110,7 @@ class ProjectTransferRegistry {
           fy = (forces as any).fy || (forces as any).Fy || 0;
           mz = (forces as any).mz || (forces as any).Mz || 0;
         }
-        
+
         // Create reaction force structure from element.reactions
         if (fy !== 0) {
           reactionForces = [{
@@ -127,7 +126,7 @@ class ProjectTransferRegistry {
       throw new Error(`No reaction forces found for support ${supportIndex + 1} of element "${sourceEl.name}". Element must be properly analyzed to generate reaction data.`);
     }
 
-    const groupId = uuidv4();
+    const groupId = crypto.randomUUID();
     const meta: TransferMeta = {
       transferGroupId: groupId,
       projectId: sourceEl.projectId,
