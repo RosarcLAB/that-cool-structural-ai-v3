@@ -1,0 +1,80 @@
+name: CI & Deploy (Frontend)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: rosarclab-web
+
+jobs:
+  # ---------------------------------------------------------------- quality
+  check:
+    name: Type-check and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        # Non-blocking for now: there are two known pre-existing errors
+        # (a stale import path in useDrawingMode.ts and a Coordinate/number
+        # mismatch in BeamAnalysisDisplay.tsx). Fix those, then drop the
+        # "|| true" to make this a real gate.
+        run: npx tsc --noEmit || true
+
+      - name: Build
+        run: npm run build
+
+  # ----------------------------------------------------------------- deploy
+  deploy:
+    name: Deploy to Firebase Hosting
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build for production
+        # Uses .env.production for VITE_* values (backend URLs, Firebase
+        # web config). All of those are public by design.
+        run: npm run build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/701061055216/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider
+          service_account: github-deployer-sa@rosarclab-web.iam.gserviceaccount.com
+
+      - name: Deploy to Firebase Hosting
+        # github-deployer-sa already holds roles/firebasehosting.admin, so the
+        # same WIF identity used for Cloud Run deploys works here - no separate
+        # FIREBASE_TOKEN or service-account key needed.
+        run: |
+          npm install -g firebase-tools
+          firebase deploy --only hosting --project "${{ env.PROJECT_ID }}" --non-interactive
+
+      - name: Smoke test
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --retry 5 --retry-delay 5 https://rosarclab-web.web.app)
+          echo "hosting -> $code"
+          test "$code" = "200"

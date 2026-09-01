@@ -57,6 +57,9 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
     const isInitialRender = useRef(true);
     const previousElementRef = useRef<Element>(elementData);
     const lastOnChangeElementRef = useRef<string>('');
+    // Serialised copy of the last elementData prop we adopted, so we can tell a
+    // genuine parent-driven change apart from an incidental re-render.
+    const lastSyncedPropRef = useRef<string>(JSON.stringify(elementData));
 
     // Helper function to update element state and notify parent if controlled
     const updateElement = (updater: (prev: Element) => Element) => {
@@ -83,11 +86,22 @@ const StructuralElementForm: React.FC<StructuralElementFormProps> = ({
         }
     }, [element, isControlled, onChange]);
 
-    // Sync with external elementData changes (without triggering onChange)
+    // Sync with external elementData changes (without triggering onChange).
+    //
+    // IMPORTANT: this compares the incoming prop against the PREVIOUS PROP, not
+    // against local state. Diffing against local state meant that any re-render
+    // of the parent re-applied the original elementData over whatever the user
+    // had typed - which made every field appear read-only. That was especially
+    // bad on the Canvas, which renders this form without an onChange handler, so
+    // the parent never learned about edits and the prop stayed stale forever.
+    //
+    // Adopting the prop only when the parent actually changed it keeps local
+    // edits intact while still picking up genuine external updates (an AI action
+    // rewriting the element, or a different element being selected).
     useEffect(() => {
-        // Deep compare the incoming prop with the current state to avoid loops.
-        // Only update if the elementData from the parent is truly different.
-        if (JSON.stringify(elementData) !== JSON.stringify(element)) {
+        const incoming = JSON.stringify(elementData);
+        if (incoming !== lastSyncedPropRef.current) {
+            lastSyncedPropRef.current = incoming;
             setElement(elementData);
         }
     }, [elementData]);
