@@ -1,5 +1,6 @@
 
 import { GeminiDecisionResponse, FilePayload } from '../customTypes/types';
+import { getAuthHeaders } from './authHeaders';
 
 /**
  * Data transfer object for sending prompt messages to the AI orchestration service.
@@ -40,10 +41,11 @@ export async function getAiDecision
   // local dev. No API key is ever sent from the browser — the server holds it.
   const ORCHESTRATOR_BASE = (import.meta.env.VITE_ORCHESTRATOR_BASE || 'http://localhost:8000').replace(/\/$/, '');
 
-  const response = await fetch(`${ORCHESTRATOR_BASE}/api/orchestration`, {
+  const response = await fetch(`${ORCHESTRATOR_BASE}/api/v1/orchestration`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(await getAuthHeaders()),
     },
     body: JSON.stringify(payload),
   });

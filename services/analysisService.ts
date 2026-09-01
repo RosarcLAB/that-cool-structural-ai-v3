@@ -1,11 +1,12 @@
 // services/analysisService.ts: Calls a remote backend for beam analysis.
 
 import { type Load, type Support, type BeamInput,  type BeamOutput, LoadType, SupportFixityType , Element as StructuralElement, DesignOutput, LoadCombination, AppliedLoads, LoadCaseType} from '../customTypes/structuralElement'
+import { getAuthHeaders } from './authHeaders';
 // Backend base URL is environment-driven. Set VITE_API_BASE in your .env
 // (e.g. https://rosarcbim-structural-api-xxxx.run.app). Falls back to the
 // local dev structural API.
 const STRUCTURAL_SERVICES_URL = (import.meta.env.VITE_API_BASE || 'http://localhost:8001').replace(/\/$/, '');
- 
+
 /**
  * Calls a remote beam analysis API to get calculation results.
  * This function handles all necessary data preparation, including unit conversions.
@@ -20,12 +21,13 @@ export const analyzeBeam = async (input: BeamInput): Promise<BeamOutput> => {
 
     console.log("Payload sent to API:", JSON.stringify(apiPayload, null, 2));
 
-    const response = await fetch(`${STRUCTURAL_SERVICES_URL}/analyse`, {
+    const response = await fetch(`${STRUCTURAL_SERVICES_URL}/v1/analyse`, {
         method: 'POST',
         mode: 'cors', // Explicitly set CORS mode to potentially help with fetch errors.
         headers: {
             "Content-Type": "application/json",
             'Accept': 'application/json',
+            ...(await getAuthHeaders()),
         },
         body: JSON.stringify(apiPayload),
     });
@@ -84,7 +86,7 @@ function convertBeamInputToApiPayload(input: BeamInput) {
     [SupportFixityType.Fixed]:  [1, 1, 1],
     [SupportFixityType.Free]:   [0, 0, 0],
   };
-  
+
   const loadTypeMap: Record<LoadType, string> = {
     [LoadType.UDL]: 'UDL_Vert',
     [LoadType.PointLoad]: 'PointLoad_Vert',
@@ -112,7 +114,7 @@ function convertBeamInputToApiPayload(input: BeamInput) {
           // TrapezoidalLoad_Vert expects an array [start_magnitude, end_magnitude].
           apiMagnitude = l.magnitude.map(m => -m);
       }
-      
+
       // API expects a single number for point load position, an array for others.
       // All position strings must be converted to numbers.
       const apiPosition = l.type === LoadType.PointLoad
@@ -180,27 +182,27 @@ enum ApiLoadCombination {
 // Map load combination based on load case factors to API format
 function mapLoadCombinationToApiFormat(combination: LoadCombination): string {
   const factors = combination.loadCaseFactors || [];
-  
+
   // Helper function to check if two numbers are approximately equal
   const isApproximately = (a: number, b: number, tolerance = 0.01) => Math.abs(a - b) <= tolerance;
-  
+
   // Check for specific patterns in the factors
   const deadFactor = factors.find(f => f.loadCaseType === 'Dead')?.factor || 0;
   const liveFactor = factors.find(f => f.loadCaseType === 'Live')?.factor || 0;
   const windFactor = factors.find(f => f.loadCaseType === 'Wind')?.factor || 0;
   const seismicFactor = factors.find(f => f.loadCaseType === 'Seismic')?.factor || 0;
-  
+
   console.log(`Analyzing combination "${combination.name}": Dead=${deadFactor}, Live=${liveFactor}, Wind=${windFactor}, Seismic=${seismicFactor}`);
-  
+
   // Determine combination type based on factors
   if (isApproximately(deadFactor, 1.35) && isApproximately(liveFactor, 0) && isApproximately(windFactor, 0) && isApproximately(seismicFactor, 0)) {
     return ApiLoadCombination.PERMANENT;
   }
-  
+
   if (isApproximately(deadFactor, 1.2) && isApproximately(liveFactor, 1.5) && isApproximately(windFactor, 0) && isApproximately(seismicFactor, 0)) {
     // Check combination name or description for hints about load type
     const nameOrDesc = (combination.name + ' ' + (combination.description || '')).toLowerCase();
-    
+
     if (nameOrDesc.includes('roof') && nameOrDesc.includes('distributed')) {
       return ApiLoadCombination.ROOF_LIVE_DISTRIBUTED;
     }
@@ -213,31 +215,31 @@ function mapLoadCombinationToApiFormat(combination: LoadCombination): string {
     if (nameOrDesc.includes('floor') && nameOrDesc.includes('concentrated')) {
       return ApiLoadCombination.FLOOR_LIVE_CONCENTRATED;
     }
-    
+
     // Default to floor distributed for 1.2G + 1.5Q pattern
     return ApiLoadCombination.FLOOR_LIVE_DISTRIBUTED;
   }
-  
+
   if (isApproximately(deadFactor, 1.2) && liveFactor > 0 && liveFactor < 1.5) {
     return ApiLoadCombination.PERMANENT_IMPOSED;
   }
-  
+
   if (isApproximately(deadFactor, 1.2) && windFactor > 0) {
     return ApiLoadCombination.PERMANENT_WIND_IMPOSED;
   }
-  
+
   if (isApproximately(deadFactor, 0.9) && windFactor > 0) {
     return ApiLoadCombination.PERMANENT_WIND_REVERSAL;
   }
-  
+
   if (isApproximately(deadFactor, 1.0) && seismicFactor > 0) {
     return ApiLoadCombination.PERMANENT_EARTHQUAKE_IMPOSED;
   }
-  
+
   if (combination.name?.toLowerCase().includes('fire') || combination.description?.toLowerCase().includes('fire')) {
     return ApiLoadCombination.FIRE;
   }
-  
+
   console.log(`No specific pattern matched for combination "${combination.name}", using default FLOOR_LIVE_DISTRIBUTED`);
   // Default fallback - use floor distributed for most common case
   return ApiLoadCombination.FLOOR_LIVE_DISTRIBUTED;
@@ -248,14 +250,14 @@ export function transformElementToDesignAPI(element: StructuralElement, combinat
   // Map LoadType to API expected strings
   const loadTypeMap: Record<LoadType, string> = {
     'UDL': 'UDL_Vert',
-    'Point Load': 'PointLoad_Vert', 
+    'Point Load': 'PointLoad_Vert',
     'Trapezoidal Load': 'Trapezoidal_Vert',
   };
 
   // Map support fixity to API format
   const fixityMap: Record<SupportFixityType, [number, number, number]> = {
     Pinned:  [1, 1, 0],
-    Roller:  [0, 1, 0], 
+    Roller:  [0, 1, 0],
     Fixed:   [1, 1, 1],
     Free:    [0, 0, 0],
   };
@@ -267,15 +269,15 @@ export function transformElementToDesignAPI(element: StructuralElement, combinat
   // Transform computed loads from combination result
   const transformedLoads = combination.computedResult?.map(load => {
     // Ensure magnitude is an array
-    const magnitude = Array.isArray(load.magnitude) ? 
-      load.magnitude : 
+    const magnitude = Array.isArray(load.magnitude) ?
+      load.magnitude :
       [load.magnitude];
-    
+
     // Ensure position is an array of numbers
-    const position = Array.isArray(load.position) ? 
+    const position = Array.isArray(load.position) ?
       load.position.map(p => parseFloat(typeof p === 'string' ? p : String(p))) :
       [parseFloat(typeof load.position === 'string' ? load.position : String(load.position))];
-    
+
     return {
       type: loadTypeMap[load.type] || 'PointLoad_Vert',
       magnitude,
@@ -304,7 +306,7 @@ export function transformElementToDesignAPI(element: StructuralElement, combinat
   const transformedSections = element.sections.map(section => ({
     name: section.name,
     material: section.material?.toLowerCase() || 'timber',
-    shape: section.shape?.toLowerCase() || 'rectangular', 
+    shape: section.shape?.toLowerCase() || 'rectangular',
     grade: section.material_grade || 'SG8',
     E: convertMPaToPa(section.elastic_modulus_E || 9000.0),
     height: section.d || 240,
@@ -342,7 +344,7 @@ export function transformElementToDesignAPI(element: StructuralElement, combinat
   };
 }
 
-/** 
+/**
  * Call API service to Design a structural element for a specific load combination
  * @param element - The structural element to be designed.
  * @param combination - The load combination to use for the design.
@@ -350,12 +352,15 @@ export function transformElementToDesignAPI(element: StructuralElement, combinat
  */
 export async function designStructuralElement(element: StructuralElement, combination: LoadCombination): Promise<DesignOutput> {
   const apiPayload = transformElementToDesignAPI(element, combination);
-  
+
   //console.log("Design payload sent to API:", JSON.stringify(apiPayload, null, 2));
-  
-  const res = await fetch(`${STRUCTURAL_SERVICES_URL}/element`, {
+
+  const res = await fetch(`${STRUCTURAL_SERVICES_URL}/v1/element`, {
     method: 'POST',
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(await getAuthHeaders()),
+    },
     body: JSON.stringify(apiPayload),
   });
 
@@ -363,57 +368,57 @@ export async function designStructuralElement(element: StructuralElement, combin
     const errorText = await res.text();
     throw new Error(`Design API failed: ${res.status} - ${errorText}`);
   }
-  
+
   const data = await res.json();
   //console.log("Design API response:", JSON.stringify(data, null, 2));
-  
+
   // Add combination name to result for tracking
   return {
     ...data,
     combinationName: combination.name || `Combination_${Date.now()}`,
     combinationType: combination.combinationType || 'Ultimate',
-    loadCaseType: combination.combinationType === 'Reaction' 
-      ? combination.loadCaseFactors?.[0]?.loadCaseType 
+    loadCaseType: combination.combinationType === 'Reaction'
+      ? combination.loadCaseFactors?.[0]?.loadCaseType
       : undefined
   } as DesignOutput;
 }
 
 // Map reactions from DesignOutput to Support.reaction as AppliedLoads
 function mapReactionsToSupports(
-  element: StructuralElement, 
+  element: StructuralElement,
   designOutput: DesignOutput,
   combination: LoadCombination
 ): StructuralElement {
-  
+
   // Only process if this is a Reaction combination type with loadCaseType
   if (combination.combinationType !== 'Reaction' || !designOutput.loadCaseType) {
     return element;
   }
-  
+
   const updatedElement = { ...element };
-  
+
   // DesignOutput.reactions format: { "0": [Fx, Fy, Mz], "6": [Fx, Fy, Mz] }
   Object.entries(designOutput.reactions).forEach(([positionStr, forces]) => {
     const position = parseFloat(positionStr);
-    
+
     // Find matching support by position (extract x from Coordinate if needed)
     const supportIndex = updatedElement.supports.findIndex(support => {
       const supportPos = typeof support.position === 'number' ? support.position : support.position.x;
       return Math.abs(supportPos - position) < 0.001;
     });
-    
+
     if (supportIndex !== -1) {
       //const [fx, fy, mz] = forces;
-      
+
       // Get or initialize existing reaction
       const existingReaction = updatedElement.supports[supportIndex].reaction || {};
-      
+
       // For each direction, add this loadCaseType's force to the AppliedLoads
       ['Fx', 'Fy', 'Mz'].forEach((dir, idx) => {
         const forceValue = forces[idx];
         if (forceValue !== 0) {
           const direction = dir as 'Fx' | 'Fy' | 'Mz';
-          
+
           if (!existingReaction[direction]) {
             // Create new AppliedLoads
             existingReaction[direction] = {
@@ -434,7 +439,7 @@ function mapReactionsToSupports(
           }
         }
       });
-      
+
       // Update support reaction with consolidated AppliedLoads
       updatedElement.supports[supportIndex] = {
         ...updatedElement.supports[supportIndex],
@@ -442,11 +447,11 @@ function mapReactionsToSupports(
       };
     }
   });
-  
+
   return updatedElement;
 }
 
-/** Design all load combinations for an element 
+/** Design all load combinations for an element
  * @param element - The structural element to be designed.
  * @returns A promise that resolves to an array of design outputs and the updated element with reactions mapped.
  */
@@ -460,11 +465,11 @@ export async function designAllCombinations(element: StructuralElement): Promise
 
   const results: DesignOutput[] = [];
   let updatedElement = { ...element }; // Track updated element
-  
+
   // 1. Import combination utils for computing results
   const { LoadCombinationUtils } = await import('../customTypes/structuralElement');
   const combinationUtils = new LoadCombinationUtils();
-  
+
   // 2. Iterate through each load combination and then design them
   for (const combination of element.loadCombinations) {
     // 1. Skip inactive combinations
@@ -473,7 +478,7 @@ export async function designAllCombinations(element: StructuralElement): Promise
     }
     // Use computed results of the combination if available
     let computedResult = combination.computedResult;
-    
+
     // 2. If no computed result exists, compute it now (this handles reaction combinations)
     if (!computedResult || computedResult.length === 0) {
       try {
@@ -483,7 +488,7 @@ export async function designAllCombinations(element: StructuralElement): Promise
         continue; // Skip this combination if computation fails
       }
     }
-    
+
     // 3. Only proceed if we have valid computed results
     if (computedResult && computedResult.length > 0) {
       try {
@@ -492,10 +497,10 @@ export async function designAllCombinations(element: StructuralElement): Promise
 
         // Task 2: Call design API for this combination
         const result = await designStructuralElement(updatedElement, combinationWithResults);
-        
+
         // Task 3: Map reactions back to element supports
         updatedElement = mapReactionsToSupports(updatedElement, result, combinationWithResults);
-        
+
         results.push(result);
       } catch (error) {
         console.error(`Design failed for combination ${combination.name}:`, error);
@@ -505,7 +510,7 @@ export async function designAllCombinations(element: StructuralElement): Promise
       console.warn(`Skipping combination ${combination.name}: No valid computed results`);
     }
   }
-  
+
   return { results, updatedElement };
 }
 
