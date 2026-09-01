@@ -1,0 +1,26 @@
+# gitleaks configuration
+#
+# Extends the default ruleset - we only ADD a narrowly-scoped exception.
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+.env.production contains only VITE_-prefixed variables. Vite compiles every
+VITE_ variable into the client-side JavaScript bundle, so these values are
+served to every visitor by design and are not secrets:
+
+  - Firebase web config (apiKey, authDomain, projectId, ...) is public by
+    design; Google documents it as an identifier, not a credential. Access is
+    controlled by Firestore Security Rules and, for our APIs, by Firebase ID
+    token verification in the backends.
+  - The Cloud Run URLs are public endpoints, protected by those same tokens.
+
+Server-side secrets (GOOGLE_API_KEY, OPENAI_API_KEY) are NOT here - they live
+in GCP Secret Manager and are injected at deploy time. VITE_GOOGLE_API_KEY is
+deliberately absent from this file.
+
+IMPORTANT: only VITE_ variables may be added to .env.production. Anything that
+must stay secret belongs in Secret Manager, never in a VITE_ variable.
+"""
+paths = ['''^\.env\.production$''']
