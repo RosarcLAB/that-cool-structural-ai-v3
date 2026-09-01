@@ -26,11 +26,9 @@ jobs:
       - run: npm ci
 
       - name: Type-check
-        # Non-blocking for now: there are two known pre-existing errors
-        # (a stale import path in useDrawingMode.ts and a Coordinate/number
-        # mismatch in BeamAnalysisDisplay.tsx). Fix those, then drop the
-        # "|| true" to make this a real gate.
-        run: npx tsc --noEmit || true
+        # Both previously-known errors are fixed, so this is a real gate:
+        # a type error now blocks the deploy.
+        run: npx tsc --noEmit
 
       - name: Build
         run: npm run build

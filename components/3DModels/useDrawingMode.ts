@@ -1,7 +1,7 @@
 // hooks/useDrawingMode.ts
 import { useState, useCallback, useRef } from 'react';
 import { Vector3 } from 'three';
-import { Element } from '../customTypes/structuralElement';
+import { Element } from '../../customTypes/structuralElement';
 
 export interface DrawingPoint {
   position: Vector3;
@@ -36,7 +36,7 @@ export const useDrawingMode = () => {
   const updateDrawing = useCallback((point: Vector3) => {
     setDrawingState(prev => {
       if (!prev.startPoint) return prev;
-      
+
       return {
         ...prev,
         currentPoint: { position: point, timestamp: Date.now() },
@@ -49,7 +49,7 @@ export const useDrawingMode = () => {
   }, []);
 
   const finishDrawing = useCallback((point: Vector3): { start: Vector3; end: Vector3 } | null => {
-    const result = drawingState.startPoint 
+    const result = drawingState.startPoint
       ? { start: drawingState.startPoint.position, end: point }
       : null;
 

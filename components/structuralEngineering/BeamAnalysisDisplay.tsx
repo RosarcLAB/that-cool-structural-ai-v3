@@ -4,7 +4,7 @@ import React, { useState, useRef, useMemo, forwardRef, useImperativeHandle } fro
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { BeamOutput, BeamInput } from '../../customTypes/structuralElement';
+import { BeamOutput, BeamInput, getCoordinateValues } from '../../customTypes/structuralElement';
 import { DownloadIcon } from '../utility/icons';
 import { Spinner } from '../utility/Spinner';
 import { CollapsibleSection } from '../utility/CollapsibleSection';
@@ -34,7 +34,7 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   const reportId = useMemo(() => `report-${crypto.randomUUID()}`, []);
-  
+
   // Prepares the data in a format suitable for the Recharts library.
   const chartData = output.x_values.map((x, i) => ({
     x: x,
@@ -71,7 +71,7 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
     link.click();
     document.body.removeChild(link);
   };
-  
+
    // Handles downloading the results as a structured two-page A4 PDF.
   const handleDownloadPdf = async () => {
     const page1Element = document.getElementById(`${reportId}-page-1`);
@@ -79,7 +79,7 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
     if (!page1Element || !page2Element) return;
 
     setIsDownloadingPdf(true);
-    
+
     // Create a temporary stylesheet to force-open all sections for printing
     const style = document.createElement('style');
     style.innerHTML = `
@@ -94,11 +94,11 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
 
     try {
         // Wait a moment for the DOM to update with the new styles and for charts to render
-        await sleep(500); 
+        await sleep(500);
 
         const pdf = new jsPDF('p', 'mm', 'a4');
         const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pageMargin = pdfWidth * 0.075; 
+        const pageMargin = pdfWidth * 0.075;
         const contentWidth = pdfWidth - (pageMargin * 2);
 
         const canvasOptions = {
@@ -134,7 +134,7 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
       downloadPdf: handleDownloadPdf,
       downloadCsv: handleDownloadCsv,
   }));
-  
+
   // A reusable function to render a single line chart for a specific data key (e.g., bending moment).
   // Animations are disabled to ensure correct rendering with html2canvas.
   const renderChart = (dataKey: keyof typeof chartData[0], name: string, unit: string, color: string) => (
@@ -176,12 +176,12 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
                   </button>
               </div>
           </div>
-        
+
         {/* Page 1 Content for PDF */}
         <div id={`${reportId}-page-1`}>
             {/* Input Summary Section */}
-            <CollapsibleSection 
-                title="Beam: Input Parameters" 
+            <CollapsibleSection
+                title="Beam: Input Parameters"
                 headerClassName="bg-teal-50 hover:bg-teal-100"
                 contentClassName="p-4"
                 defaultCollapsed={false}
@@ -197,7 +197,7 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
                     </div>
                      <div>
                         <h5 className="font-semibold mt-4 mb-2 text-sm text-gray-700">Supports</h5>
-                        <table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-2">Position (m)</th><th className="p-2">Fixity</th></tr></thead><tbody>{input.Supports.map((s, i) => (<tr key={i} className="border-b"><td className="p-2">{formatNumber(s.position)}</td><td className="p-2">{s.fixity}</td></tr>))}</tbody></table>
+                        <table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-2">Position (m)</th><th className="p-2">Fixity</th></tr></thead><tbody>{input.Supports.map((s, i) => (<tr key={i} className="border-b"><td className="p-2">{formatNumber(getCoordinateValues(s.position)[0])}</td><td className="p-2">{s.fixity}</td></tr>))}</tbody></table>
                     </div>
                     <div>
                         <h5 className="font-semibold mt-4 mb-2 text-sm text-gray-700">Loads</h5>
@@ -224,14 +224,14 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
                     </div>
                 </div>
             </CollapsibleSection>
-            
+
             {/* Results Sections */}
             <div className="pt-4 mt-4 border-t">
                  <div className="mb-4"><h3 className="text-lg font-bold text-neutral">Analysis Results</h3></div>
             </div>
 
 
-            <CollapsibleSection 
+            <CollapsibleSection
                 title="Summary: Maximum Values"
                 headerClassName="bg-teal-50 hover:bg-teal-100"
                 contentClassName="p-4"
@@ -255,10 +255,10 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
               <table className="w-full text-left text-sm"><thead className="bg-gray-50"><tr><th className="p-2">Position (m)</th><th className="p-2">Fx (kN)</th><th className="p-2">Fy (kN)</th><th className="p-2">Mz (kNm)</th></tr></thead><tbody>{Object.entries(output.reactions).map(([pos, vals]) => (<tr key={pos} className="border-b"><td className="p-2">{formatNumber(Number(pos))}</td><td className="p-2">{formatNumber(vals[0]/1000)}</td><td className="p-2">{formatNumber(vals[1]/1000)}</td><td className="p-2">{formatNumber(vals[2]/1000)}</td></tr>))}</tbody></table>
             </CollapsibleSection>
         </div>
-        
+
         {/* Page 2 Content for PDF */}
         <div id={`${reportId}-page-2`}>
-            <CollapsibleSection 
+            <CollapsibleSection
                 title="Shear Force Diagram"
                 headerClassName="bg-teal-50 hover:bg-teal-100"
                 contentClassName="p-4"
@@ -275,7 +275,7 @@ export const BeamAnalysisDisplay = forwardRef<BeamAnalysisDisplayHandle, BeamAna
             >
               {renderChart('bending_moment', 'Bending Moment', 'kNm', '#3b82f6')}
             </CollapsibleSection>
-            
+
             <CollapsibleSection
                 title="Deflection Diagram"
                 headerClassName="bg-teal-50 hover:bg-teal-100"
